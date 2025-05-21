@@ -28,7 +28,7 @@ function performPhotomerge(folder) {
 	var photomergeOptions;
 	photomergeOptions = {
 		quality: 3, // 0 (Draft), 1 (Default), 2 (High), 3 (Maximum)
-		alignment: "translation", // translation = Reposition
+		alignment: "Reposition", // translation = Reposition
 		blendImages: true,
 		lensCorrection: false,
 		automaticCrop: true,
@@ -43,7 +43,8 @@ function performPhotomerge(folder) {
         //app.photomerge(fileList, photomergeOptions);
 		photomerge.createPanorama(fileList, false); 
 
-				
+		// flatten the document
+		//app.activeDocument.flatten();
 				
 		// Create the result names
 		var resultNamePSD = folder.name + "_STITCHED.psd";

@@ -12,7 +12,8 @@ function fig = use_fig(name)
 %       use_fig('MyFigure');  % Creates or reuses a figure named 'MyFigure'
 %       plot(1:10, rand(1,10)); % Plot data in the figure
  
- 
+if nargin == 0 || isempty(name), name = 'scratch'; end
+
 fig = findobj('type','figure','-and','name',name);
 if isempty(fig)
     fig = figure('name',name,'color','w');
