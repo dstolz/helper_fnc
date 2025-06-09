@@ -5,7 +5,7 @@ from qt import QPixmap, Qt
 output_dir = "C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/Axial_350microns"
 start_z = -0.100      # in mm
 end_z = -7.650     # in mm
-step = -0.350      # mm per slice
+step = -0.1      # mm per slice
 scale_factor = 2.0  # Increase resolution by scaling captured image
 
 # Setup
