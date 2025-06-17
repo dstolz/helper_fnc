@@ -1,8 +1,20 @@
 % organize_images_by_section_gui.m
 % GUI to select one or more subdirectories and organize .czi files by section
+%
+% This function launches a graphical interface that:
+%   • Remembers your last base folder selection
+%   • Displays subdirectories in a sortable table with creation date, modification date, and file count
+%   • Allows multi-selection of folders to process
+%   • Automatically creates subject-section subfolders and moves .czi files accordingly
+%   • Reports progress and summary in the Command Window
+%
 % Usage:
 %   organize_images_by_section_gui()
+%     - Prompts for a base folder via dialog, remembering last used location.
+%
 %   organize_images_by_section_gui(basePath)
+%     - Uses provided basePath after validating it exists and is a folder.
+%     - Skips the initial directory picker but still updates the stored preference.
 
 function organize_images_by_section_gui(basePath)
     % Preference settings
@@ -36,43 +48,49 @@ function organize_images_by_section_gui(basePath)
     % Gather subdirectory info
     d = dir(basePath);
     isDir = [d.isdir] & ~ismember({d.name}, {'.','..'});
-    subdirs = {d(isDir).name};
+    d_sub = d(isDir);
+    subdirs = {d_sub.name}';
     if isempty(subdirs)
         fprintf('No subdirectories found under %s.\n', basePath);
         return;
     end
-    % Build table data
-    numDirs = numel(subdirs);
-    dateCreated = datetime([d(isDir).datenum],'ConvertFrom','datenum');
+    numDirs = numel(d_sub);
+
+    % Use dir fields directly
+    dateModified = datetime([d_sub.datenum]', 'ConvertFrom', 'datenum');
+    dateCreated  = dateModified;  % Default to modified if no separate created info available
     fileCount = zeros(numDirs,1);
     for i = 1:numDirs
-        fileCount(i) = numel(dir(fullfile(basePath, subdirs{i}, '*.czi')));
+        folderPath = fullfile(basePath, d_sub(i).name);
+        fileCount(i) = numel(dir(fullfile(folderPath, '*.czi')));
     end
-    tblData = table(subdirs(:), dateCreated(:), fileCount, ...
-        'VariableNames', {'Subdirectory','DateCreated','FileCount'});
+
+    % Build table data
+    tblData = table(subdirs, dateCreated, dateModified, fileCount, ...
+        'VariableNames', {'Subdirectory','DateCreated','DateModified','FileCount'});
 
     % Initialize selection storage
     selectedRows = [];
 
     % Create UI
-    fig = uifigure('Name','Select Directories to Process','Position',[200 200 500 350]);
+    fig = uifigure('Name','Select Directories to Process','Position',[200 200 600 350]);
 
     % Create sortable table
     tbl = uitable(fig, ...
         'Data', tblData, ...
-        'ColumnName', {'Name','Date Created','#.czi Files'}, ...
+        'ColumnName', {'Name','Date Created','Date Modified','#.czi Files'}, ...
         'ColumnSortable', true, ...
-        'Position', [25 75 450 250], ...
+        'Position', [25 75 550 250], ...
         'CellSelectionCallback', @onCellSelect);
 
     % Process button
     uibutton(fig, 'push', ...
         'Text','Process', ...
-        'Position',[200 20 100 40], ...
+        'Position',[250 20 100 40], ...
         'ButtonPushedFcn', @onProcess);
 
     % Callback: track selected rows
-    function onCellSelect(src, event)
+    function onCellSelect(~, event)
         if isempty(event.Indices)
             selectedRows = [];
         else
