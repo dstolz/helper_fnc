@@ -1,11 +1,11 @@
-function results = extract_ECM_profiles(tiffFile, Window, ImgRotation, NumSegments, polyOrder, polyDistanceVec)
+function [M,Mg,results] = extract_ECM_profiles(tiffFile, Window, ImgRotation, NumSegments, polyOrder, polyDistanceVec,opts)
 % extract_ECM_profiles: Extracts ECM intensity profiles from histological images.
 %   results = extract_ECM_profiles(tiffFile, 'Name', Value, ...)
 %   Uses bfmatlab, parabola_offset, extract_equal_area_profiles, colorcet, use_fig.
 %
 %   Inputs (Name,Value):
 %     'Window'        - Analysis window, [min max] (default: [-1000 200])
-%     'ImgRotation'   - Image rotation in degrees (default: 0)
+%     'ImgRotation'   - CCW Image rotation in degrees (default: 0)
 %     'NumSegments'   - Number of analysis segments (default: 50)
 %     'polyOrder'     - Polynomial order for fitting surface (default: 2)
 %     'polyDistanceVec'  - Vector of distances for polynomial fitting (default: [])
@@ -19,15 +19,22 @@ arguments
     ImgRotation (1,1) double {mustBeMember(ImgRotation,[-90 0 90])}= 0
     NumSegments (1,1) double = 50
     polyOrder (1,1) double {mustBePositive,mustBeInteger} = 2
-    polyDistanceVec (:,1) double
+    polyDistanceVec (:,1) double = 0:-100:-1000
+
+    opts.metrics (1,:) = {'sum'}
+    opts.xZero   (1,1) = inf
+    opts.bfmatlabPath            (1,:) char = 'C:/src/bfmatlab'
+    opts.gaussSigma          (1,2) double = [2 0.5]
+    opts.gaussFilterSize     (1,2) double = [101 51]
+
 end
 
-addpath('C:/src/bfmatlab')
+addpath(opts.bfmatlabPath)
 
 % Load image and OME metadata
 dataCell = bfopen(tiffFile);
 
-    
+
 % Parse OME metadata to struct
 allKeys = dataCell{2}.keySet().toArray();
 info = struct();
@@ -53,23 +60,26 @@ if ImgRotation ~= 0
     y_res = tx;
 end
 
-% Combine channels (PV + ECM)
-img = imgPV + imgECM;
-img = adapthisteq(img);
-img = imgaussfilt(img,20);
 
-pixIntensityThreshold = graythresh(img);
-ind = img < pixIntensityThreshold;
+
+
+
+% Combine channels (PV + ECM)
+imgProj = imgPV;
+% imgProj = imgPV + imgECM;
+imgProjProcessed = adapthisteq(imgProj);
+imgProjProcessed = imgaussfilt(imgProjProcessed,20);
+
+
+
+pixIntensityThreshold = graythresh(imgProjProcessed);
+ind = imgProjProcessed < pixIntensityThreshold;
 ind(round(size(ind,1)/2):end,:) = false; % Only keep upper half
 rp = regionprops(ind, {'Area','PixelList','PixelIdxList','Centroid'});
 
 cnt = vertcat(rp(:).Centroid);
 [~,i] = min(cnt(:,2)); % top-most
 rp = rp(i);
-
-idxOutside = rp.PixelIdxList;
-ind = false(size(img));
-ind(idxOutside) = true;
 
 x = rp.PixelList(:,1);
 y = rp.PixelList(:,2);
@@ -80,22 +90,28 @@ for j = 1:length(yi)
     yi(j) = max(y(xind));
 end
 
-x_img = x_res*(0:size(img,2)-1);
-y_img = y_res*(0:size(img,1)-1);
+x_img = x_res*(0:size(imgProjProcessed,2)-1);
+y_img = y_res*(0:size(imgProjProcessed,1)-1);
+
+
 
 % Surface coordinates
 x_surface = xi * x_res;
 y_surface = yi * y_res;
 
-% Set X=0 using ginput
-use_fig('histology');
-ax = gca;
-imagesc(x_img, y_img, imgPV);
-axis image;
-clim([min(imgPV(:)), 0.2*max(imgPV(:))]);
-[xz,~] = ginput(1);
-x_img = x_img - xz;
-x_surface = x_surface - xz;
+
+
+if isinf(opts.xZero)
+    % Set X=0 using ginput
+    use_fig('histology');
+    imagesc(x_img, y_img, imgPV);
+    axis image;
+    colorcet('L8');
+    clim([min(imgPV(:)), 0.2*max(imgPV(:))]);
+    [opts.xZero,~] = ginput(1);
+end
+x_img = x_img - opts.xZero;
+x_surface = x_surface - opts.xZero;
 
 % Limit analysis window
 ind_analysisX = x_surface >= Window(1) & x_surface <= Window(2);
@@ -103,54 +119,67 @@ x_zeroOffset = find(ind_analysisX,1);
 x_surface(~ind_analysisX) = [];
 y_surface(~ind_analysisX) = [];
 
-% Parabola calculation
-parabolaStart = 0;
-parabolaVec = linspace(parabolaStart, ParabolaLast, ParabolaN);
-dpv = abs(diff(parabolaVec(1:2)))/2 * 1.7;
-polynomialOrder = 2;
-pf = polyfit(x_surface, y_surface, polynomialOrder);
+% surface fitting
+dpv = abs(diff(polyDistanceVec(1:2)))/2 * 1.7; % based on a heuristic
+
+pf = polyfit(x_surface, y_surface, polyOrder);
 pv = polyval(pf, x_surface);
 residual = pv - y_surface;
-isOutlier = isoutlier(residual);
-x_surface(isOutlier) = [];
-y_surface(isOutlier) = [];
-pf = polyfit(x_surface, y_surface, polynomialOrder);
-pv = polyval(pf, x_surface);
-[x_parabOffset, y_parabOffset, L_arc] = parabola_offset(pf, x_surface([1 end]), parabolaVec);
+isOut = isoutlier(residual);
+x_surface(isOut) = [];
+y_surface(isOut) = [];
+
+% refit surface excluding outliers
+pf = polyfit(x_surface, y_surface, polyOrder);
+
+[x_off, y_off, L_arc] = parabola_offset(pf, x_surface([1 end]), polyDistanceVec);
 segSpacing = L_arc ./ NumSegments;
 
 % ECM analysis along parabolas
-nProfiles = size(x_parabOffset,2);
+nProfiles = size(x_off,2);
 dataECM = cell(nProfiles,1);
 distsECM = cell(nProfiles,1);
 pos = cell(nProfiles,1);
 edgeCoords = cell(nProfiles,1);
 parfor_progress(nProfiles);
 parfor i = 1:nProfiles
-    x = x_parabOffset(:,i)/x_res + x_zeroOffset + xz;
-    y = y_parabOffset(:,i)/y_res;
+    x = x_off(:,i)/x_res + x_zeroOffset + opts.xZero;
+    y = y_off(:,i)/y_res;
     [dataECM{i},distsECM{i},edgeCoords{i},~,pos{i}] = extract_equal_area_profiles( ...
-        imgECM, x, y, height = dpv, segmentSpacing = segSpacing(i), metrics = {'sum'});
-    edgeCoords{i}(:,[1 3]) = (edgeCoords{i}(:,[1 3]) - xz - x_zeroOffset) * x_res;
+        imgECM, x, y, ...
+        height = dpv, ...
+        segmentSpacing = segSpacing(i), ...
+        metrics = opts.metrics);
+    edgeCoords{i}(:,[1 3]) = (edgeCoords{i}(:,[1 3]) - opts.xZero - x_zeroOffset) * x_res;
     edgeCoords{i}(:,[2 4]) = edgeCoords{i}(:,[2 4]) * y_res;
     parfor_progress;
 end
 parfor_progress(0);
 
+
+
+
+
+
+
+
+
 % Plotting results
 use_fig('histology');
 tl = tiledlayout('flow');
-[~,fn] = fileparts(ffn);
+tl.Padding = "none";
+tl.TileSpacing = "compact";
+
+[~,fn] = fileparts(tiffFile);
 title(tl,fn,Interpreter="none");
 
 nexttile
 imagesc(x_img, y_img, imgPV);
 axis image
 clim([min(imgPV(:)), 0.2*max(imgPV(:))]);
-xline(0,'-w');
 line(x_surface, y_surface, 'Color','r','LineWidth',1);
-line(x_parabOffset(:,1),y_parabOffset(:,1),'Color',[.8 .8 .8],'LineWidth',2);
-line(x_parabOffset, y_parabOffset,'Color',[.8 .8 .8],'LineWidth',1,'LineStyle',':');
+line(x_off(:,1),y_off(:,1),'Color',[.8 .8 .8],'LineWidth',2);
+line(x_off, y_off,'Color',[.8 .8 .8],'LineWidth',1,'LineStyle',':');
 title('PV');
 cm = colorcet('L8');
 colormap(gca,cm);
@@ -161,9 +190,8 @@ b(b < 0) = 0;
 imagesc(x_img, y_img, b);
 axis image
 clim([0, 0.2*max(b(:))]);
-xline(0,'-w');
 line(x_surface, y_surface, 'Color','r','LineWidth',1);
-line(x_parabOffset(:,1),y_parabOffset(:,1),'Color',[.8 .8 .8],'LineWidth',2);
+line(x_off(:,1),y_off(:,1),'Color',[.8 .8 .8],'LineWidth',2);
 cm = colorcet('L8');
 colormap(gca,cm);
 title('PV background corrected');
@@ -172,9 +200,8 @@ nexttile
 imagesc(x_img, y_img, imgECM);
 axis image
 clim([min(imgECM(:)), 0.2*max(imgECM(:))]);
-xline(0,'-w');
 line(x_surface, y_surface, 'Color','r','LineWidth',1);
-line(x_parabOffset(:,1),y_parabOffset(:,1),'Color',[.8 .8 .8],'LineWidth',2);
+line(x_off(:,1),y_off(:,1),'Color',[.8 .8 .8],'LineWidth',2);
 title('ECM');
 cm = colorcet('L5');
 colormap(gca,cm);
@@ -196,34 +223,46 @@ nexttile
 imagesc(x_img, y_img, imgECM);
 axis image
 clim([min(imgECM(:)), 0.2*max(imgECM(:))]);
-xline(0,'-w');
 line(x_surface, y_surface, 'Color','r','LineWidth',1);
-line(x_parabOffset(:,1),y_parabOffset(:,1),'Color',[.8 .8 .8],'LineWidth',2);
+line(x_off(:,1),y_off(:,1),'Color',[.8 .8 .8],'LineWidth',2);
 title('ECM');
 cm = colorcet('L5');
 colormap(gca,cm);
 linkaxes(findobj(gcf,'type','axes'));
 
+
+
+
+
+
 % Compile output matrix
 M = horzcat(dataECM{:});
-Mg = imgaussfilt(M,[2 0.5],'FilterDomain','spatial','FilterSize',[101 51]);
-xm = linspace(0,mean(L_arc),size(M,1));
-ym = parabolaVec / y_res;
+Mg = imgaussfilt(M,opts.gaussSigma, ...
+    FilterDomain='spatial', ...
+    FilterSize=opts.gaussFilterSize);
+
+xm = linspace(x_off(1,1),x_off(end,1),size(M,1));
+ym = polyDistanceVec / y_res;
 
 % Results visualization
 use_fig('results');
 tl = tiledlayout('flow');
 title(tl,fn,Interpreter="none");
+
+
 nexttile
 imagesc(xm,ym,M');
+xline(0,'-w')
 set(gca,'ydir','normal');
 title('ECM');
 xlabel('rostrocaudal distance (\mum)');
 ylabel('lateromedial distance (\mum)');
 colormap(gca,colorcet('L16'));
 colorbar;
+
 nexttile
 imagesc(xm,ym,Mg');
+xline(0,'-w')
 set(gca,'ydir','normal');
 title('ECM smoothed');
 xlabel('rostrocaudal distance (\mum)');
@@ -231,24 +270,73 @@ ylabel('lateromedial distance (\mum)');
 colormap(gca,colorcet('L16'));
 colorbar;
 
-% Structure results
-results = struct;
-results.dataECM = dataECM;
-results.distsECM = distsECM;
-results.edgeCoords = edgeCoords;
-results.xm = xm;
-results.ym = ym;
-results.M = M;
-results.Mg = Mg;
-results.imgPV = imgPV;
-results.imgECM = imgECM;
-results.info = info;
-results.x_surface = x_surface;
-results.y_surface = y_surface;
-results.x_parabOffset = x_parabOffset;
-results.y_parabOffset = y_parabOffset;
-results.L_arc = L_arc;
-results.fn = fn;
-results.x_img = x_img;
-results.y_img = y_img;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+if nargout < 3, return; end
+
+% Structure results with logical grouping into substructures
+results = struct();
+
+% Input parameters
+results.params = struct(...
+    'tiffFile', tiffFile, ...
+    'Window', Window, ...
+    'ImgRotation', ImgRotation, ...
+    'NumSegments', NumSegments, ...
+    'polyOrder', polyOrder, ...
+    'polyDistanceVec', polyDistanceVec, ...
+    'info', info, ...
+    'x_res', x_res, ...
+    'y_res', y_res, ...
+    'options',opts);
+
+% Raw and processed images
+results.images = struct(...
+    'PV', imgPV, ...
+    'ECM', imgECM, ...
+    'combined', imgProj, ...
+    'processed', imgProjProcessed,...
+    'x_img', x_img, ...
+    'y_img', y_img);
+
+% Surface fitting and coordinates
+results.surface = struct();
+results.surface.polyfit = struct(...
+    'polyCoefficients', pf, ...
+    'fittedValues', pv);
+
+results.surface.coordinates = struct(...
+    'xZero', opts.xZero, ...
+    'x_surface', x_surface, ...
+    'y_surface', y_surface, ...
+    'x_parabOffset', x_off, ...
+    'y_parabOffset', y_off, ...
+    'L_arc', L_arc);
+
+% Profiles data
+results.profiles = struct(...
+    'dataECM', {dataECM}, ...
+    'distsECM', {distsECM}, ...
+    'edgeCoords', {edgeCoords}, ...
+    'positions', {pos});
+
+% Visualization outputs
+results.M = struct(...
+    'xm', xm, ...
+    'ym', ym);
 

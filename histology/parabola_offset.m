@@ -32,7 +32,6 @@ xmin = min(x);
 xmax = max(x);
 
 % High-resolution sampling for normal calculation
-% m = max(5*n, 1000);
 m = 1000;
 t = linspace(xmin, xmax, m)';
 y = polyval(p, t);
