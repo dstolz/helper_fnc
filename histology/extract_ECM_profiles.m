@@ -1,35 +1,62 @@
-function [M,Mg,results] = extract_ECM_profiles(tiffFile, Window, ImgRotation, NumSegments, polyOrder, polyDistanceVec,opts)
-% extract_ECM_profiles: Extracts ECM intensity profiles from histological images.
-%   results = extract_ECM_profiles(tiffFile, 'Name', Value, ...)
-%   Uses bfmatlab, parabola_offset, extract_equal_area_profiles, colorcet, use_fig.
+function [M,results] = extract_ECM_profiles(tiffFile, opts)
+% extract_ECM_profiles Extracts extracellular matrix (ECM) intensity profiles from histological images.
+%   [M, results] = extract_ECM_profiles(tiffFile, opts)
 %
-%   Inputs (Name,Value):
-%     'Window'        - Analysis window, [min max] (default: [-1000 200])
-%     'ImgRotation'   - CCW Image rotation in degrees (default: 0)
-%     'NumSegments'   - Number of analysis segments (default: 50)
-%     'polyOrder'     - Polynomial order for fitting surface (default: 2)
-%     'polyDistanceVec'  - Vector of distances for polynomial fitting (default: [])
+%   INPUTS:
+%     tiffFile              - Char vector: path to an OME-TIFF file. Required.
+%     opts.profileWindow    - 1×2 double: [min max] analysis window in μm (relative to surfaceXY). Default: [-Inf Inf].
+%     opts.numSegments      - Scalar integer: number of equal-area segments per profile. Default: 50.
+%     opts.polyOrder        - Positive integer: polynomial order for surface fitting. Default: 2.
+%     opts.profileLocations - N×1 double: distances (μm) along normal for profile extraction. Default: (0:-100:-1000)'.
+%     opts.imgRotation      - Scalar: image rotation in degrees CCW. [] for interactive selection. Default: [].
+%     opts.metrics          - 1×K cell array of strings: metrics to compute per segment (e.g. {'sum','mean'}). Default: {'sum'}.
+%     opts.surfaceXY        - 1x2: approximate coordinate of surface 0. Specify as empty to manually pick. Default: [].
+%     opts.bfmatlabPath     - Char vector: path to bfmatlab toolbox. Default: 'C:/src/bfmatlab'.
+%     opts.minMaskArea      - Scalar: minimum mask area (pixels) to keep. Default: 10000.
 %
-%   Outputs:
-%     results: structure with extracted data and key outputs
+%   OUTPUTS:
+%     M       - (profiles × segments) matrix of raw ECM intensity values.
+%     results - Struct with fields:
+%               .options  - the opts struct used
+%               .params   - file name, OME metadata, x_res, y_res
+%               .images   - PV, ECM, combined, processed images and x/y coords
+%               .surface  - .polyfit (coefficients & fitted values) and .coordinates (x_surface, y_surface, parabola offsets)
+%               .profiles - cell arrays: dataECM, distsECM, edgeCoords, positions
+%               .M        - struct with .x and .y axes for the output matrix
+%
+%   EXAMPLE:
+%     opts = struct( ...
+%       'profileWindow',[-500 300], ...
+%       'numSegments',100, ...
+%       'profileLocations',(0:-50:-500)', ...
+%       'imgRotation',90);
+%     [M, results] = extract_ECM_profiles('slice1.ome.tiff', opts);
+%
+%   DEPENDENCIES:
+%     bfmatlab (Bio-Formats), parabola_offset, extract_equal_area_profiles,
+%     colorcet, use_fig
+%
+%   See also polyfit, imrotate, adapthisteq, imgaussfilt
+
 
 arguments
     tiffFile (1,:) char {mustBeNonempty}
-    Window   (1,2) double = [-1000 200]
-    ImgRotation (1,1) double {mustBeMember(ImgRotation,[-90 0 90])}= 0
-    NumSegments (1,1) double = 50
-    polyOrder (1,1) double {mustBePositive,mustBeInteger} = 2
-    polyDistanceVec (:,1) double = 0:-100:-1000
 
+    opts.profileWindow   (1,2) double = [-inf inf]
+    opts.numSegments (1,1) double = 50
+    opts.polyOrder (1,1) double {mustBePositive,mustBeInteger} = 2
+    opts.profileLocations (:,1) double = 0:-100:-1000
+    opts.imgRotation double = []                 % empty = interactive rotation
     opts.metrics (1,:) = {'sum'}
-    opts.xZero   (1,1) = inf
+    opts.surfaceXY   double = []
     opts.bfmatlabPath            (1,:) char = 'C:/src/bfmatlab'
-    opts.gaussSigma          (1,2) double = [2 0.5]
-    opts.gaussFilterSize     (1,2) double = [101 51]
-
+    opts.minMaskArea (1,1) = 10000;
 end
 
 addpath(opts.bfmatlabPath)
+
+[~,tiffFn] = fileparts(tiffFile);
+
 
 % Load image and OME metadata
 dataCell = bfopen(tiffFile);
@@ -52,12 +79,52 @@ y_res = info.GlobalYResolution;
 % Extract channels and rotate if needed
 imgPV = dataCell{1}{1,1};
 imgECM = dataCell{1}{2,1};
-if ImgRotation ~= 0
-    imgPV  = imrotate(imgPV, ImgRotation);
-    imgECM = imrotate(imgECM, ImgRotation);
-    tx = x_res;
-    x_res = y_res;
-    y_res = tx;
+
+
+
+
+
+% Determine rotation
+if isempty(opts.imgRotation)
+    % Interactive rotate
+    fig = use_fig('histology');
+    imagesc(imgPV);
+    axis image
+    colorcet('L8');
+    clim([min(imgPV(:)), 0.2*max(imgPV(:))]);
+    xticks([]);
+    yticks([]);
+    sz = size(imgPV);
+    yline(linspace(1,sz(1),5),':w');
+    xline(linspace(1,sz(2),5),':w');
+
+    % Main title shows current angle
+    title('Rotation: 0°', 'FontWeight', 'bold');
+    
+    % Subtitle explains all controls
+    subtitle(["←/→: ±step° (Shift=±5°, Ctrl=±0.1°)"; ...
+              "↑/↓: ±90°  •  Enter: accept"]);
+
+    h = zoom(fig);
+    h.Enable = 'off';
+
+    fig.UserData.angle = 0;
+    fig.UserData.imgPV = imgPV;
+
+    fig.WindowKeyPressFcn = @(src,evt) onKey(src,evt);
+    uiwait(fig);
+
+    opts.imgRotation = fig.UserData.angle;
+    
+    % close(fig);
+
+    h.Enable = 'on';
+end
+
+% Apply rotation
+if opts.imgRotation ~= 0
+    imgPV  = imrotate(imgPV, opts.imgRotation);
+    imgECM = imrotate(imgECM, opts.imgRotation);
 end
 
 
@@ -77,8 +144,28 @@ ind = imgProjProcessed < pixIntensityThreshold;
 ind(round(size(ind,1)/2):end,:) = false; % Only keep upper half
 rp = regionprops(ind, {'Area','PixelList','PixelIdxList','Centroid'});
 
-cnt = vertcat(rp(:).Centroid);
-[~,i] = min(cnt(:,2)); % top-most
+a = [rp.Area];
+rp(a < opts.minMaskArea) = [];
+
+
+if isempty(opts.surfaceXY)
+    % Set X=0 using ginput
+    use_fig('histology');
+    imagesc(imgPV);
+    title(tiffFn, Interpreter = 'none');
+    subtitle('Select x = 0 at surface');
+    axis image;
+    colorcet('L8');
+    clim([min(imgPV(:)), 0.2*max(imgPV(:))]);
+    [x,y] = ginput(1);
+    opts.surfaceXY = [x y];
+end
+
+
+
+% find region nearest to user input
+dists = arrayfun(@(s) min(hypot(s.PixelList(:,1) - opts.surfaceXY(1), s.PixelList(:,2) - opts.surfaceXY(2))), rp);
+[~,i] = min(dists);
 rp = rp(i);
 
 x = rp.PixelList(:,1);
@@ -90,39 +177,52 @@ for j = 1:length(yi)
     yi(j) = max(y(xind));
 end
 
-x_img = x_res*(0:size(imgProjProcessed,2)-1);
-y_img = y_res*(0:size(imgProjProcessed,1)-1);
 
+
+x_img = 0:size(imgProjProcessed,2)-1;
+y_img = 0:size(imgProjProcessed,1)-1;
+
+x_img = x_img - opts.surfaceXY(1);
+% y_img = y_img - opts.surfaceXY(2);
+
+x_img = x_res*x_img;
+y_img = y_res*y_img;
+
+
+% adjust x coordinates to zero at specified location
+xi = xi - 1 - opts.surfaceXY(1);
+% yi = yi - 1 - opts.surfaceXY(2);
 
 
 % Surface coordinates
-x_surface = xi * x_res;
-y_surface = yi * y_res;
+x_surface = (xi-1) * x_res;
+y_surface = (yi-1) * y_res;
 
 
 
-if isinf(opts.xZero)
-    % Set X=0 using ginput
-    use_fig('histology');
-    imagesc(x_img, y_img, imgPV);
-    axis image;
-    colorcet('L8');
-    clim([min(imgPV(:)), 0.2*max(imgPV(:))]);
-    [opts.xZero,~] = ginput(1);
-end
-x_img = x_img - opts.xZero;
-x_surface = x_surface - opts.xZero;
+
+
+
 
 % Limit analysis window
-ind_analysisX = x_surface >= Window(1) & x_surface <= Window(2);
+% NOTE: This is not actually what we want. We really probably want the arc
+% length. We'll just include more than we need and then trim to size after
+% we've calculated arc lengths
+pwin = opts.profileWindow;
+% pwins = sign(pwin);
+% pwin = pwins .* (abs(pwin) * 2);
+ind_analysisX = x_surface >= pwin(1) & x_surface <= pwin(2);
 x_zeroOffset = find(ind_analysisX,1);
 x_surface(~ind_analysisX) = [];
 y_surface(~ind_analysisX) = [];
 
-% surface fitting
-dpv = abs(diff(polyDistanceVec(1:2)))/2 * 1.7; % based on a heuristic
 
-pf = polyfit(x_surface, y_surface, polyOrder);
+
+
+
+
+% surface fitting
+pf = polyfit(x_surface, y_surface, opts.polyOrder);
 pv = polyval(pf, x_surface);
 residual = pv - y_surface;
 isOut = isoutlier(residual);
@@ -130,10 +230,44 @@ x_surface(isOut) = [];
 y_surface(isOut) = [];
 
 % refit surface excluding outliers
-pf = polyfit(x_surface, y_surface, polyOrder);
+pf = polyfit(x_surface, y_surface, opts.polyOrder);
 
-[x_off, y_off, L_arc] = parabola_offset(pf, x_surface([1 end]), polyDistanceVec);
-segSpacing = L_arc ./ NumSegments;
+[x_off, y_off,L_arc] = parabola_offset(pf, x_surface([1 end]), opts.profileLocations);
+
+% ds = hypot(diff(x_off,1,1), diff(y_off,1,1));
+% s_full = [zeros(1,size(ds,2)); cumsum(ds,1)];
+% [~, idx0] = min(abs(x_off));
+% s = s_full - s_full(idx0);
+% ind = s < opts.profileWindow(1) | s > opts.profileWindow(2);
+% x_off(ind) = nan;
+% y_off(ind) = nan;
+% 
+% % recompute arc length
+% ds = hypot(diff(x_off,1,1), diff(y_off,1,1));
+% s = [zeros(1,size(ds,2)); cumsum(ds,1,"omitmissing")];
+% L_arc = max(s,[],1);
+
+
+
+
+% compute segment spacing
+segHeight = abs(diff(opts.profileLocations(1:2)))/2 * 1.7; % based on a heuristic
+segSpacing = L_arc ./ opts.numSegments;
+
+
+
+% overlay surface
+use_fig('histology');
+imagesc(x_img,y_img,imgPV);
+title(tiffFn, Interpreter = 'none');
+axis image;
+colorcet('L8');
+clim([min(imgPV(:)), 0.2*max(imgPV(:))]);
+line(x_surface,y_surface,Color = 'r',Marker = '.',LineStyle = 'none');
+line(x_off(:,1),y_off(:,1),Color = 'w');
+drawnow
+
+
 
 % ECM analysis along parabolas
 nProfiles = size(x_off,2);
@@ -142,15 +276,20 @@ distsECM = cell(nProfiles,1);
 pos = cell(nProfiles,1);
 edgeCoords = cell(nProfiles,1);
 parfor_progress(nProfiles);
+% for i = 1:nProfiles
 parfor i = 1:nProfiles
-    x = x_off(:,i)/x_res + x_zeroOffset + opts.xZero;
+    x = x_off(:,i)/x_res + x_zeroOffset + opts.surfaceXY(1);
     y = y_off(:,i)/y_res;
+
+    x(isnan(x)) = [];
+    y(isnan(y)) = [];
+
     [dataECM{i},distsECM{i},edgeCoords{i},~,pos{i}] = extract_equal_area_profiles( ...
         imgECM, x, y, ...
-        height = dpv, ...
+        height = segHeight, ...
         segmentSpacing = segSpacing(i), ...
         metrics = opts.metrics);
-    edgeCoords{i}(:,[1 3]) = (edgeCoords{i}(:,[1 3]) - opts.xZero - x_zeroOffset) * x_res;
+    edgeCoords{i}(:,[1 3]) = (edgeCoords{i}(:,[1 3]) - opts.surfaceXY(1) - x_zeroOffset) * x_res;
     edgeCoords{i}(:,[2 4]) = edgeCoords{i}(:,[2 4]) * y_res;
     parfor_progress;
 end
@@ -170,31 +309,22 @@ tl = tiledlayout('flow');
 tl.Padding = "none";
 tl.TileSpacing = "compact";
 
-[~,fn] = fileparts(tiffFile);
-title(tl,fn,Interpreter="none");
+title(tl,tiffFn,Interpreter="none");
+
 
 nexttile
-imagesc(x_img, y_img, imgPV);
+imagesc(x_img, y_img, imgECM);
 axis image
-clim([min(imgPV(:)), 0.2*max(imgPV(:))]);
+clim([min(imgECM(:)), 0.2*max(imgECM(:))]);
 line(x_surface, y_surface, 'Color','r','LineWidth',1);
 line(x_off(:,1),y_off(:,1),'Color',[.8 .8 .8],'LineWidth',2);
-line(x_off, y_off,'Color',[.8 .8 .8],'LineWidth',1,'LineStyle',':');
-title('PV');
-cm = colorcet('L8');
+title('ECM');
+cm = colorcet('L5');
 colormap(gca,cm);
 
-nexttile
-b = imgPV - imgaussfilt(imgPV,20);
-b(b < 0) = 0;
-imagesc(x_img, y_img, b);
-axis image
-clim([0, 0.2*max(b(:))]);
-line(x_surface, y_surface, 'Color','r','LineWidth',1);
-line(x_off(:,1),y_off(:,1),'Color',[.8 .8 .8],'LineWidth',2);
-cm = colorcet('L8');
-colormap(gca,cm);
-title('PV background corrected');
+
+
+
 
 nexttile
 imagesc(x_img, y_img, imgECM);
@@ -219,55 +349,22 @@ for i = 1:length(edgeCoords)
 end
 hold off
 
-nexttile
-imagesc(x_img, y_img, imgECM);
-axis image
-clim([min(imgECM(:)), 0.2*max(imgECM(:))]);
-line(x_surface, y_surface, 'Color','r','LineWidth',1);
-line(x_off(:,1),y_off(:,1),'Color',[.8 .8 .8],'LineWidth',2);
-title('ECM');
-cm = colorcet('L5');
-colormap(gca,cm);
-linkaxes(findobj(gcf,'type','axes'));
-
-
-
-
 
 
 % Compile output matrix
-M = horzcat(dataECM{:});
-Mg = imgaussfilt(M,opts.gaussSigma, ...
-    FilterDomain='spatial', ...
-    FilterSize=opts.gaussFilterSize);
-
-xm = linspace(x_off(1,1),x_off(end,1),size(M,1));
-ym = polyDistanceVec / y_res;
+M = horzcat(dataECM{:})';
+xm = linspace(0,mean(L_arc),size(M,1))-opts.surfaceXY(1)*x_res; % ????
+ym = opts.profileLocations / y_res;
 
 % Results visualization
-use_fig('results');
-tl = tiledlayout('flow');
-title(tl,fn,Interpreter="none");
-
-
 nexttile
-imagesc(xm,ym,M');
+imagesc(xm,ym,M);
 xline(0,'-w')
 set(gca,'ydir','normal');
 title('ECM');
 xlabel('rostrocaudal distance (\mum)');
 ylabel('lateromedial distance (\mum)');
-colormap(gca,colorcet('L16'));
-colorbar;
-
-nexttile
-imagesc(xm,ym,Mg');
-xline(0,'-w')
-set(gca,'ydir','normal');
-title('ECM smoothed');
-xlabel('rostrocaudal distance (\mum)');
-ylabel('lateromedial distance (\mum)');
-colormap(gca,colorcet('L16'));
+colorcet('L16');
 colorbar;
 
 
@@ -287,23 +384,20 @@ colorbar;
 
 
 
-if nargout < 3, return; end
+
+
+if nargout < 2, return; end
 
 % Structure results with logical grouping into substructures
 results = struct();
 
 % Input parameters
+results.options = opts;
 results.params = struct(...
     'tiffFile', tiffFile, ...
-    'Window', Window, ...
-    'ImgRotation', ImgRotation, ...
-    'NumSegments', NumSegments, ...
-    'polyOrder', polyOrder, ...
-    'polyDistanceVec', polyDistanceVec, ...
     'info', info, ...
     'x_res', x_res, ...
-    'y_res', y_res, ...
-    'options',opts);
+    'y_res', y_res);
 
 % Raw and processed images
 results.images = struct(...
@@ -311,8 +405,8 @@ results.images = struct(...
     'ECM', imgECM, ...
     'combined', imgProj, ...
     'processed', imgProjProcessed,...
-    'x_img', x_img, ...
-    'y_img', y_img);
+    'x', x_img, ...
+    'y', y_img);
 
 % Surface fitting and coordinates
 results.surface = struct();
@@ -321,7 +415,7 @@ results.surface.polyfit = struct(...
     'fittedValues', pv);
 
 results.surface.coordinates = struct(...
-    'xZero', opts.xZero, ...
+    'surfaceXY', opts.surfaceXY, ...
     'x_surface', x_surface, ...
     'y_surface', y_surface, ...
     'x_parabOffset', x_off, ...
@@ -337,6 +431,74 @@ results.profiles = struct(...
 
 % Visualization outputs
 results.M = struct(...
-    'xm', xm, ...
-    'ym', ym);
+    'x', xm, ...
+    'y', ym);
 
+
+
+end
+
+
+function onKey(src,evt)
+    % Retrieve current angle
+    angle = src.UserData.angle;
+    % imgH = src.UserData.imgH;
+
+    
+    % Determine adjustment step
+    mods = evt.Modifier;
+    if ismember('shift', mods)
+        step = 5;      % coarse tuning
+    elseif ismember('control', mods)
+        step = 0.1;    % fine tuning
+    else
+        step = 1;      % default
+    end
+
+    % Handle keypresses
+    switch evt.Key
+        case 'leftarrow'
+            angle = angle - step;
+        case 'rightarrow'
+            angle = angle + step;
+        case 'uparrow'      % rotate CCW by 90°
+            angle = angle + 90;
+        case 'downarrow'    % rotate CW by 90°
+            angle = angle - 90;
+        case 'return'
+            uiresume(src);
+            return
+        otherwise
+            return
+    end
+
+    angle = mod(angle,360);
+
+    % Apply rotation and refresh display
+    imgPV = src.UserData.imgPV;
+    rotated = imrotate(imgPV, angle,"bilinear");
+    imagesc(rotated);
+    axis image
+    colorcet('L8');
+    clim([min(imgPV(:)), 0.2*max(imgPV(:))]);
+    xticks([]);
+    yticks([]);
+    sz = size(imgPV);
+    yline(linspace(1,sz(1),5),':w');
+    xline(linspace(1,sz(2),5),':w');
+
+    
+    % Main title shows current angle
+    title(sprintf('Rotation: %.2f°', angle), 'FontWeight', 'bold');
+    
+    % Subtitle explains all controls
+    subtitle(["←/→: ±step° (Shift=±5°, Ctrl=±0.1°)"; ...
+              "↑/↓: ±90°  •  Enter: accept"]);
+    
+    % Colormap and contrast
+    colorcet('L8');
+    clim([min(imgPV(:)), 0.2*max(imgPV(:))]);
+    
+    % Store updated angle
+    src.UserData.angle = angle;
+end

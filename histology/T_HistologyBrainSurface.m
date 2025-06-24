@@ -1,11 +1,96 @@
-% ffn = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-952/SUBJ-ID-952_2C_R/SUBJ-ID-952_2C_R_WFA-PV_Z3_250609_proj.tif';
-% ffn = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-952/SUBJ-ID-952_2B_R/SUBJ-ID-952_2B_R_WFA-PV_Z3_250609_proj.tif';
-% ffn = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-957/SUBJ-ID-957_2B_R/SUBJ-ID-957_2B_R_WFA-PV_Z3_250609_proj.tif';
-% ffn = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-976/SUBJ-ID-976_2B_R/SUBJ-ID-976_2B_R_WFA-PV_Z3_250609_proj.tif';
-
-% ffn = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-940/SUBJ-ID-940_1A_R/SUBJ-ID-940_1A_R_WFA-PV_Z3_250613_proj.tif';
-ffn = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-940/SUBJ-ID-940_1B_R/SUBJ-ID-940_1B_R_WFA-PV_Z3_250613_proj.tif';
+%% ECM ANALYSIS
+% root = 'G:/Shared drives/CarasLab/IMAGES/';
+root = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-957';
 
 
-[M,Mg,R] = extract_ECM_profiles(ffn,[-1000 200],90,100,2,0:-20:-600);
+d = dir(fullfile(root,'**\*WFA-PV_Z3*proj.tif'));
 
+ffn = cellfun(@fullfile,{d.folder},{d.name},'uni',0);
+ffn = string(ffn)';
+
+
+% ffn = "G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-957/SUBJ-ID-957_1C_R/SUBJ-ID-957_1C_R_WFA-PV_Z3_250613_2_proj.tif";
+% ffn = "G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-958/SUBJ-ID-958_2A_R/SUBJ-ID-958_2A_R_WFA-PV_Z3_250612_proj.tif";
+% ffn = "G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-954/SUBJ-ID-954_2A_R/SUBJ-ID-954_2A_R_WFA-PV_Z3_250611_proj.tif"
+
+for i = 1:length(ffn)
+% for i = 9
+    [pth,fn,ext] = fileparts(ffn(i));
+
+    fprintf('%d of %d.\t%s ...',i,length(ffn),fn+ext)
+
+
+    [M,R] = extract_ECM_profiles(ffn(i), ...
+        profileWindow = [-1000 750], ...
+        profileLocations=0:-5:-600, ...
+        polyOrder=3);
+
+    Mg = imgaussfilt(M,[1 2]);
+
+
+    nexttile
+    imagesc(R.M.x,R.M.y,Mg);
+    xline(0,'-w')
+    set(gca,'ydir','normal');
+    title('ECM');
+    xlabel('rostrocaudal distance (\mum)');
+    ylabel('lateromedial distance (\mum)');
+    colorcet('L16');
+    colorbar
+
+
+    drawnow
+
+    fnOut = fn + "_ECManalysis.mat";
+    ffnOut = fullfile(pth,fnOut);
+
+    save(ffnOut,"M","Mg","R");
+
+
+    fnOut = fn + "_ECManalysis.fig";
+    savefig(fullfile(pth,fnOut));
+
+    fnOut = fn + "_ECManalysis.png";
+    saveas(gcf,fullfile(pth,fnOut));
+
+    fprintf(' done\n')
+end
+
+%% 
+
+root = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-957';
+
+
+d = dir(fullfile(root,'**\*_R_*ECManalysis.mat'));
+
+ffn = cellfun(@fullfile,{d.folder},{d.name},'uni',0);
+ffn = string(ffn)';
+
+ffn(2) = [];
+
+disp(ffn)
+
+data = arrayfun(@load,ffn,'uni',0);
+data = cell2mat(data);
+
+%%
+M = [];
+z = 0;
+
+use_fig;
+tiledlayout('flow');
+for i = 1:length(data)
+    % M(:,:,i) = data(i).M;
+    d = data(i);
+    [~,fn] = fileparts(d.R.params.tiffFile);
+
+    nexttile;
+    imagesc(d.R.M.x,d.R.M.y,d.M);
+    axis image
+    set(gca,'ydir','normal')
+    xline(0,'-w')
+    titlef(fn)
+    subtitlef('z = %.3f mm',z)
+    z = z - 0.35;
+
+end
