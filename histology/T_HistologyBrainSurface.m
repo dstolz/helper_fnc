@@ -2,7 +2,7 @@
 % root = 'G:/Shared drives/CarasLab/IMAGES/';
 root = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-952';
 
-
+skipExisting = true;
 
 addpath('C:/src/bfmatlab')
 
@@ -20,6 +20,21 @@ while i <= length(ffn)
     [pth,fn,ext] = fileparts(ffn(i));
 
     fprintf('%d of %d.\t%s ...',i,length(ffn),fn+ext)
+
+    fnAnalysis = fn + "_ECManalysis.mat";
+    fnAnalysisPng = fn + "_ECManalysis.png";
+
+    if skipExisting && isfile(fullfile(pth,fnAnalysis))
+        use_fig('histology');
+        imshow(fullfile(pth,fnAnalysisPng));
+        title('EXISTING IMAGE')
+        r = input('Data already exists. Press any key to reanalyze or Enter to skip: ','s');
+        if isempty(r)
+            i = i + 1;
+            continue
+        end
+    end
+
 
 
     [M,R] = straighten_cortex(ffn(i), ...
@@ -55,8 +70,7 @@ while i <= length(ffn)
 
     fprintf('\tsaving data ')
 
-    fnOut = fn + "_ECManalysis.mat";
-    ffnOut = fullfile(pth,fnOut);
+    ffnOut = fullfile(pth,fnAnalysis);
     save(ffnOut,"M","Mg","R",'-v6');
     fprintf('.')
 
@@ -65,8 +79,7 @@ while i <= length(ffn)
     % savefig(fullfile(pth,fnOut));
     % fprintf('.')
 
-    fnOut = fn + "_ECManalysis.png";
-    saveas(gcf,fullfile(pth,fnOut));
+    saveas(gcf,fullfile(pth,fnAnalysisPng));
     fprintf('.')
 
     fprintf(' done\n')
