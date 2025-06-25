@@ -1,4 +1,4 @@
-function titlef(varargin)
+function h = titlef(varargin)
 
 os = varargin{1};
 if ishandle(os)
@@ -9,4 +9,6 @@ else
 end
 
 str = sprintf(varargin{:});
-title(os,str,Interpreter = "none");
+h = title(os,str,Interpreter = "none");
+
+if nargout == 0, clear h; end
