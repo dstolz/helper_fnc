@@ -1,46 +1,79 @@
-function [M,results] = extract_ECM_profiles(tiffFile, opts)
-% extract_ECM_profiles Extracts extracellular matrix (ECM) intensity profiles from histological images.
-%   [M, results] = extract_ECM_profiles(tiffFile, opts)
+function [M,results] = unwrap_brain(tiffFile, opts)
+% unwrap_brain -- intensity profiles from histological images.
 %
-%   INPUTS:
-%     tiffFile              - Char vector: path to an OME-TIFF file. Required.
-%     opts.surfaceWindow    - 1×2 double: [min max] analysis window in μm (relative to surfaceXY). Default: [-Inf Inf].
-%     opts.numSegments      - Scalar integer: number of equal-area segments per profile. Default: 50.
-%     opts.polyOrder        - Positive integer: polynomial order for surface fitting. Default: 2.
-%     opts.profileLocations - N×1 double: distances (μm) along normal for surface extraction. Default: (0:-100:-1000)'.
-%     opts.imgRotation      - Scalar: image rotation in degrees CCW. [] for interactive selection. Default: [].
-%     opts.metrics          - 1×K cell array of strings: metrics to compute per segment (e.g. {'sum','mean'}). Default: {'sum'}.
-%     opts.surfaceXY        - 1x2: approximate coordinate of surface 0. Specify as empty to manually pick. Default: [].
-%     opts.bfmatlabPath     - Char vector: path to bfmatlab toolbox. Default: 'C:/src/bfmatlab'.
-%     opts.minMaskArea      - Scalar: minimum mask area (pixels) to keep. Default: 10000.
+%   [M, RESULTS] = unwrap_brain(TIFFFILE, OPTS) analyzes an OME-TIFF image
+%   to extract equal-area ECM intensity profiles along the cortical surface. The
+%   function fits a polynomial surface to the boundary between PV and ECM channels,
+%   computes parabolic offsets, and samples intensity metrics across specified
+%   distances from the surface.
 %
-%   OUTPUTS:
-%     M       - (profiles × segments) matrix of raw ECM intensity values.
-%     results - Struct with fields:
-%               .options  - the opts struct used
-%               .params   - file name, OME metadata, x_res, y_res
-%               .images   - PV, ECM, combined, processed images and x/y coords
-%               .surface  - .polyfit (coefficients & fitted values) and .coordinates (x_surface, y_surface, parabola offsets)
-%               .profiles - cell arrays: dataECM, distsECM, edgeCoords, positions
-%               .M        - struct with .x and .y axes for the output matrix
+%   Input Arguments
+%   ---------------
+%   TIFFFILE         Path to input OME-TIFF file (char vector). Required.
 %
-%   EXAMPLE:
+%   OPTIONS (struct with fields):
+%     surfaceWindow     1×2 double [min max] analysis window in micrometers
+%                       relative to the detected surface (default: [-Inf, Inf]).
+%     numSegments       Scalar integer specifying number of segments per profile
+%                       (default: 50).
+%     polyOrder         Positive integer polynomial order for surface fitting
+%                       (default: 2).
+%     profileLocations  N×1 double vector of distances (μm) along the surface
+%                       normal for profile extraction (default: (0:-100:-1000)').
+%     imgRotation       Scalar rotation angle in degrees CCW; empty for interactive
+%                       selection (default: []).
+%     surfaceXY         1×2 double [x y] approximate pixel coordinate of reference
+%                       surface point; empty to manually pick via GUI (default: []).
+%     metrics           1×K cell array of strings specifying metrics to compute per
+%                       segment, e.g. {'sum','mean'} (default: {'sum'}).
+%     minMaskArea       Scalar minimum area (pixels) to consider for surface mask
+%                       (default: 10000).
+%     segmentHeight     Scalar height (μm) of each segment; computed from
+%                       profileLocations if empty (default: []).
+%     segmentSpacing    Scalar or vector spacing (μm) between segments; computed
+%                       from numSegments if empty (default: []).
+%
+%   Output Arguments
+%   ----------------
+%   M        Profiles-by-segments matrix of raw ECM intensity values.
+%   RESULTS  Struct with fields:
+%      options   The OPTIONS structure used for analysis.
+%      params    Struct including TIFF file name, OME metadata, and spatial
+%                resolutions (x_res, y_res).
+%      images    Struct containing raw and processed images (PV, ECM, combined,
+%                processed) and pixel-to-micron coordinate axes (x, y).
+%      surface   Struct with:
+%        polyfit.coefficients  Polynomial coefficients for surface fit.
+%        polyfit.fittedValues  Fitted y-values along the surface.
+%        coordinates.surfaceXY Reference surface point [x y].
+%        coordinates.x_surface Surface x-coordinates (μm).
+%        coordinates.y_surface Surface y-coordinates (μm).
+%        coordinates.x_offset  Parabolic offset x-coordinates (μm).
+%        coordinates.y_offset  Parabolic offset y-coordinates (μm).
+%        coordinates.L_arc     Arc length along each profile (μm).
+%      surfaces  Cell arrays per profile:
+%        dataECM    Raw ECM intensity profiles.
+%        distsECM   Distances along each profile (μm).
+%        edgeCoords Coordinates of profile edges in μm.
+%        positions  Pixel positions used for sampling.
+%      M         Struct with fields x (cortical distances) and y (profile distances).
+%
+%   Example:
 %     opts = struct( ...
-%       'surfaceWindow',[-500 300], ...
-%       'numSegments',100, ...
-%       'profileLocations',(0:-50:-500)', ...
-%       'imgRotation',90);
-%     [M, results] = extract_ECM_profiles('slice1.ome.tiff', opts);
+%       'surfaceWindow', [-500, 300], ...
+%       'numSegments', 100, ...
+%       'profileLocations', (0:-50:-500)', ...
+%       'imgRotation', 90);
+%     [M, results] = unwrap_brain('slice1.ome.tiff', opts);
 %
-%   DEPENDENCIES:
+%   Dependencies:
 %     bfmatlab (Bio-Formats), parabola_offset, extract_equal_area_profiles,
-%     colorcet, use_fig
+%     colorcet, use_fig, imrotate, adapthisteq, imgaussfilt, regionprops.
 %
-%   See also polyfit, imrotate, adapthisteq, imgaussfilt
-
+%   See also polyfit, imrotate, adapthisteq, imgaussfilt.
 
 arguments
-    tiffFile (1,:) char {mustBeNonempty}
+    tiffFile (1,:) char {mustBeFile}
 
     opts.surfaceWindow   (1,2) double = [-inf inf]
     opts.numSegments (1,1) double = 50
@@ -49,13 +82,10 @@ arguments
     opts.imgRotation double = []                 % empty = interactive rotation
     opts.metrics (1,:) = {'sum'}
     opts.surfaceXY   double = []
-    opts.bfmatlabPath  (1,:) char = 'C:/src/bfmatlab'
     opts.minMaskArea (1,1) double = 10000;
     opts.segmentHeight double = []
     opts.segmentSpacing double = []
 end
-
-addpath(opts.bfmatlabPath)
 
 [~,tiffFn] = fileparts(tiffFile);
 
@@ -276,6 +306,7 @@ colorcet('L8');
 clim([min(imgRef(:)), 0.2*max(imgRef(:))]);
 line(x_surface,y_surface,Color = 'r',Marker = '.',LineStyle = 'none');
 line(x_off(:,1),y_off(:,1),Color = 'w');
+line(0,polyval(pf, 0),LineWidth = 2, Marker = 'o',MarkerSize = 10,Color = 'm');
 drawnow
 
 
@@ -332,6 +363,7 @@ axis image
 clim([min(imgData(:)), 0.2*max(imgData(:))]);
 line(x_surface, y_surface, 'Color','r','LineWidth',1);
 line(x_off(:,1),y_off(:,1),'Color',[.8 .8 .8],'LineWidth',2);
+line(0,polyval(pf, 0),LineWidth = 2, Marker = 'o',MarkerSize = 10,Color = 'm');
 title('ECM');
 cm = colorcet('L5');
 colormap(gca,cm);
@@ -346,6 +378,7 @@ axis image
 clim([min(imgData(:)), 0.2*max(imgData(:))]);
 line(x_surface, y_surface, 'Color','r','LineWidth',1);
 line(x_off(:,1),y_off(:,1),'Color',[.8 .8 .8],'LineWidth',2);
+line(0,polyval(pf, 0),LineWidth = 2, Marker = 'o',MarkerSize = 10,Color = 'm');
 title('ECM');
 cm = colorcet('L5');
 colormap(gca,cm);
