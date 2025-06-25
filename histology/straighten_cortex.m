@@ -10,6 +10,8 @@ function [M,results] = straighten_cortex(tiffFile, opts)
 %   Input Arguments
 %   ---------------
 %   TIFFFILE         Path to input OME-TIFF file (char vector). Required.
+%                    First channel is used as anatomical reference.
+%                    Second channel is used as data image.
 %
 %   OPTIONS (struct with fields):
 %     surfaceWindow     1×2 double [min max] analysis window in micrometers
@@ -70,7 +72,7 @@ function [M,results] = straighten_cortex(tiffFile, opts)
 %     bfmatlab (Bio-Formats), parabola_offset, extract_equal_area_profiles,
 %     colorcet, use_fig, imrotate, adapthisteq, imgaussfilt, regionprops.
 %
-%   See also polyfit, imrotate, adapthisteq, imgaussfilt.
+% see also, parabola_offset, extract_equal_area_profiles
 
 arguments
     tiffFile (1,:) char {mustBeFile}
@@ -109,7 +111,7 @@ y_res = info.GlobalYResolution;
 
 
 % Extract channels and rotate if needed
-imgRef = dataCell{1}{1,1};
+imgRef  = dataCell{1}{1,1};
 imgData = dataCell{1}{2,1};
 
 
@@ -119,57 +121,48 @@ imgData = dataCell{1}{2,1};
 % Determine rotation
 if isempty(opts.imgRotation)
     % Interactive rotate
-    fig = use_fig('histology');
-    imagesc(imgRef);
-    axis image
-    colorcet('L8');
-    clim([min(imgRef(:)), 0.2*max(imgRef(:))]);
-    xticks([]);
-    yticks([]);
-    sz = size(imgRef);
-    yline(linspace(1,sz(1),5),':w');
-    xline(linspace(1,sz(2),5),':w');
+    use_fig('histology');
+    rot = InteractiveRotator(imgRef);
+    rot.TargetAxis = gca;
+    rot.start();
 
-    % Main title shows current angle
-    title('Rotation: 0°', 'FontWeight', 'bold');
-    
-    % Subtitle explains all controls
-    subtitle(["←/→: ±step° (Shift=±5°, Ctrl=±0.1°)"; ...
-              "↑/↓: ±90°  •  Enter: accept"]);
+   
+    opts.imgRotation = rot.Angle;
+    opts.imgFlipped = rot.Flipped;
 
-    h = zoom(fig);
-    h.Enable = 'off';
 
-    fig.UserData.angle = 0;
-    fig.UserData.image = imgRef;
-
-    fig.WindowKeyPressFcn = @(src,evt) rotate_interactive(src,evt);
-    uiwait(fig);
-
-    opts.imgRotation = fig.UserData.angle;
-    
-    h.Enable = 'on';
 end
 
-% Apply rotation
+
+
+
+% Apply transformations
 if opts.imgRotation ~= 0
     imgRef  = imrotate(imgRef, opts.imgRotation);
     imgData = imrotate(imgData, opts.imgRotation);
 end
 
+if opts.imgFlipped(1)
+    imgRef = flip(imgRef,1);
+    imgData = flip(imgData,1);
+end
+if opts.imgFlipped(2)
+    imgRef = flip(imgRef,2);
+    imgData = flip(imgData,2);
+end
 
 
 
 
-% Combine channels (PV + ECM)
-imgProj = imgRef;
-imgProjProcessed = adapthisteq(imgProj);
-imgProjProcessed = imgaussfilt(imgProjProcessed,20);
+
+
+imgRefProcessed = adapthisteq(imgRef);
+imgRefProcessed = imgaussfilt(imgRefProcessed,20);
 
 
 
-pixIntensityThreshold = graythresh(imgProjProcessed);
-ind = imgProjProcessed < pixIntensityThreshold;
+pixIntensityThreshold = graythresh(imgRefProcessed);
+ind = imgRefProcessed < pixIntensityThreshold;
 ind(round(size(ind,1)/2):end,:) = false; % Only keep upper half
 rp = regionprops(ind, {'Area','PixelList','PixelIdxList','Centroid'});
 
@@ -209,8 +202,8 @@ end
 
 
 
-x_img = 0:size(imgProjProcessed,2)-1;
-y_img = 0:size(imgProjProcessed,1)-1;
+x_img = 0:size(imgRefProcessed,2)-1;
+y_img = 0:size(imgRefProcessed,1)-1;
 
 x_img = x_img - opts.surfaceXY(1);
 % y_img = y_img - opts.surfaceXY(2);
@@ -310,17 +303,20 @@ line(0,polyval(pf, 0),LineWidth = 2, Marker = 'o',MarkerSize = 10,Color = 'm');
 drawnow
 
 
-% ECM analysis along parabolas
+% intensity analysis along parabolas
 nProfiles = size(x_off,2);
 dataECM = cell(nProfiles,1);
 distsECM = cell(nProfiles,1);
 pos = cell(nProfiles,1);
 edgeCoords = cell(nProfiles,1);
+sx = opts.surfaceXY(1);
+met = opts.metrics;
+
 parfor_progress(nProfiles);
 % for i = 1:nProfiles
 parfor i = 1:nProfiles
     % x = x_off(:,i)/x_res + x_zeroOffset + opts.surfaceXY(1);
-    x = x_off(:,i)/x_res + opts.surfaceXY(1);
+    x = x_off(:,i)/x_res + sx;
     y = y_off(:,i)/y_res;
 
     x(isnan(x)) = [];
@@ -331,10 +327,9 @@ parfor i = 1:nProfiles
         height = segmentHeight / avg_res, ...
         segmentSpacing = segSpacing(i) / avg_res, ...
         approach = 'below', ...
-        metrics = opts.metrics);
+        metrics = met);
 
-    % edgeCoords{i}(:,[1 3]) = (edgeCoords{i}(:,[1 3]) - opts.surfaceXY(1) - x_zeroOffset) * x_res;
-    edgeCoords{i}(:,[1 3]) = (edgeCoords{i}(:,[1 3]) - opts.surfaceXY(1)) * x_res;
+    edgeCoords{i}(:,[1 3]) = (edgeCoords{i}(:,[1 3]) - sx) * x_res;
     edgeCoords{i}(:,[2 4]) = edgeCoords{i}(:,[2 4]) * y_res;
     parfor_progress;
 end
@@ -450,8 +445,8 @@ results.params = struct(...
 results.images = struct(...
     'PV', imgRef, ...
     'ECM', imgData, ...
-    'combined', imgProj, ...
-    'processed', imgProjProcessed,...
+    'combined', imgRef, ...
+    'processed', imgRefProcessed,...
     'x', x_img, ...
     'y', y_img);
 
