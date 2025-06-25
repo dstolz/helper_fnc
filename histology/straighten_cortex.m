@@ -130,6 +130,7 @@ if isempty(opts.imgRotation)
     opts.imgRotation = rot.Angle;
     opts.imgFlipped = rot.Flipped;
 
+    delete(rot);
 
 end
 
@@ -156,12 +157,19 @@ end
 
 
 
-imgRefProcessed = adapthisteq(imgRef);
-imgRefProcessed = imgaussfilt(imgRefProcessed,20);
+% imgRefProcessed = adapthisteq(imgRef);
+imgRefProcessed = imgaussfilt(imgRef,20);
+
+
+adj = ThresholdAdjuster(imgRefProcessed,gca);
+pixIntensityThreshold = adj.ThresholdOriginal;
+
+% snippet = imgRefProcessed(1:400,1:400);
+% snippet = snippet ./ max(snippet(:));
+% pixIntensityThreshold = graythresh(snippet);
 
 
 
-pixIntensityThreshold = graythresh(imgRefProcessed);
 ind = imgRefProcessed < pixIntensityThreshold;
 ind(round(size(ind,1)/2):end,:) = false; % Only keep upper half
 rp = regionprops(ind, {'Area','PixelList','PixelIdxList','Centroid'});

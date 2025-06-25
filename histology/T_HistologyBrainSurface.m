@@ -1,6 +1,6 @@
 %% ECM ANALYSIS
 % root = 'G:/Shared drives/CarasLab/IMAGES/';
-root = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-952';
+root = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-957';
 
 skipExisting = true;
 
@@ -92,7 +92,7 @@ end
 
 %% 
 
-root = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-957';
+root = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-952';
 
 
 d = dir(fullfile(root,'**\*_R_*ECManalysis.mat'));
