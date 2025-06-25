@@ -2,7 +2,7 @@
 % Extract trapezoidal profiles along a 2D curve and compute image metrics.
 %
 % SYNTAX
-%   [metricResults, dists, edgeCoords, idxAll, positions, normals] = ...
+%   [metricResults, midpoints, edgeCoords, idxAll, positions, normals] = ...
 %       extract_equal_area_profiles(I, x, y, opts)
 %
 % DESCRIPTION
@@ -35,7 +35,7 @@
 %
 % OUTPUTS
 %   metricResults   - [numSegments x numMetrics] array of computed metric values.
-%   dists           - [numSegments x 1] arclength positions of segment centers.
+%   midpoints           - [numSegments x 1] arclength positions of segment centers.
 %   edgeCoords      - [numSamples x 4] concatenated edge coordinate pairs
 %                     [xPos,yPos,xNeg,yNeg] for each sample point.
 %   idxAll          - Cell array (numSegments x 1) of linear image indices
@@ -45,10 +45,9 @@
 %
 % EXAMPLE
 %   % Compute mean intensity above the curve with 20px spacing:
-%   opts = struct('height',5,'segmentSpacing',20,'metrics',{{'mean'}},...
+%   [M,d] = extract_equal_area_profiles(I,x,y,'height',5,'segmentSpacing',20,'metrics',{{'mean'}},...
 %                 'visualize',true,'approach','above');
-%   [M,d,ec,idx,p,n] = extract_equal_area_profiles(I,x,y,opts);
-function [metricResults, dists, edgeCoords, idxAll, positions, normals] = extract_equal_area_profiles(I, x, y, opts)
+function [metricResults, midpoints, edgeCoords, idxAll, positions, normals] = extract_equal_area_profiles(I, x, y, opts)
 arguments
     I                  {mustBeNumeric, mustBeNonempty}
     x   (:,1) double   {mustBeNonempty}
@@ -82,13 +81,13 @@ end
 positions(:,1) = interp1(sSamples, x, s);
 positions(:,2) = interp1(sSamples, y, s);
 
-% Distances: midpoints between sample centers
-dists = (s(1:end-1) + s(2:end)) / 2;
+% Midpoints between sample centers
+midpoints = (s(1:end-1) + s(2:end)) / 2;
 
 % Compute normals at sampled positions
-dx = gradient(x);  dy = gradient(y);
-mag = hypot(dx, dy);  mag(mag==0) = 1;
-tx = dx ./ mag;  ty = dy ./ mag;
+dx = gradient(x);       dy = gradient(y);
+mag = hypot(dx, dy);    mag(mag==0) = 1;
+tx = dx ./ mag;         ty = dy ./ mag;
 tpx = interp1(sSamples, tx, s);
 tpy = interp1(sSamples, ty, s);
 normals = [-tpy, tpx];
@@ -108,10 +107,10 @@ switch opts.approach
     case 'middle'
         edgePos = positions + opts.height .* normals;
         edgeNeg = positions - opts.height .* normals;
-    case 'above'
+    case 'below'
         edgePos = positions + opts.height .* normals;
         edgeNeg = positions;  % bottom edge on curve
-    case 'below'
+    case 'above'
         edgePos = positions;  % top edge on curve
         edgeNeg = positions - opts.height .* normals;
 end

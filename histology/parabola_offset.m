@@ -21,10 +21,16 @@
 function [x_off, y_off, L_arc] = parabola_offset(p, x, d, n)
 % Use argument validation and defaults
 arguments
-    p (1,:) double
+    p
     x (1,2) double
     d (:,1) double
     n (1,1) double = 200
+end
+
+mu = [];
+if iscell(p)
+    mu = p{2};
+    p = p{1};
 end
 
 % Domain endpoints
@@ -34,8 +40,14 @@ xmax = max(x);
 % High-resolution sampling for normal calculation
 m = 1000;
 t = linspace(xmin, xmax, m)';
-y = polyval(p, t);
-dy = polyval(polyder(p), t);
+
+if isempty(mu)
+    y = polyval(p, t);
+    dy = polyval(polyder(p), t);
+else
+    y = polyval(p, t, [], mu);
+    dy = polyval(polyder(p), t,[], mu);
+end
 
 % Compute unit normals
 Lvec = sqrt(1 + dy.^2);

@@ -1,6 +1,6 @@
 %% ECM ANALYSIS
 % root = 'G:/Shared drives/CarasLab/IMAGES/';
-root = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-957';
+root = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-952';
 
 
 d = dir(fullfile(root,'**\*WFA-PV_Z3*proj.tif'));
@@ -13,7 +13,9 @@ ffn = string(ffn)';
 % ffn = "G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-958/SUBJ-ID-958_2A_R/SUBJ-ID-958_2A_R_WFA-PV_Z3_250612_proj.tif";
 % ffn = "G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-954/SUBJ-ID-954_2A_R/SUBJ-ID-954_2A_R_WFA-PV_Z3_250611_proj.tif"
 
-for i = 1:length(ffn)
+% for i = 1:length(ffn)
+i = 1;
+while i < length(ffn)
 % for i = 9
     [pth,fn,ext] = fileparts(ffn(i));
 
@@ -21,9 +23,10 @@ for i = 1:length(ffn)
 
 
     [M,R] = extract_ECM_profiles(ffn(i), ...
-        profileWindow = [-1000 750], ...
+        surfaceWindow = [-1000 750], ...
         profileLocations=0:-5:-600, ...
-        polyOrder=3);
+        numSegments = 100, ...
+        polyOrder = 5);
 
     Mg = imgaussfilt(M,[1 2]);
 
@@ -41,6 +44,16 @@ for i = 1:length(ffn)
 
     drawnow
 
+
+
+    r = input('Try Again?: ',"s");
+
+    if ~isempty(r)
+        fprintf(2,'Trying again!\n')
+        continue
+    end
+
+    fprintf('\tsaving data ...')
     fnOut = fn + "_ECManalysis.mat";
     ffnOut = fullfile(pth,fnOut);
 
@@ -54,7 +67,12 @@ for i = 1:length(ffn)
     saveas(gcf,fullfile(pth,fnOut));
 
     fprintf(' done\n')
+
+    i = i + 1;
 end
+
+
+
 
 %% 
 
