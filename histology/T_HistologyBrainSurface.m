@@ -15,14 +15,14 @@ ffn = string(ffn)';
 
 
 i = 1;
-while i < length(ffn)
+while i <= length(ffn)
 
     [pth,fn,ext] = fileparts(ffn(i));
 
     fprintf('%d of %d.\t%s ...',i,length(ffn),fn+ext)
 
 
-    [M,R] = unwrap_brain(ffn(i), ...
+    [M,R] = straighten_cortex(ffn(i), ...
         surfaceWindow = [-1000 750], ...
         profileLocations=0:-5:-600, ...
         numSegments = 100, ...
@@ -46,7 +46,7 @@ while i < length(ffn)
 
 
 
-    r = input('Use any key to try again or enter to saved and continue: ',"s");
+    r = input('Use any key to try again or press Enter to save and continue: ',"s");
 
     if ~isempty(r)
         fprintf(2,'Trying again!\n')

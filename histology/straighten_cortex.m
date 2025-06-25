@@ -1,7 +1,7 @@
-function [M,results] = unwrap_brain(tiffFile, opts)
-% unwrap_brain -- intensity profiles from histological images.
+function [M,results] = straighten_cortex(tiffFile, opts)
+% straighten_cortex -- intensity profiles from histological images.
 %
-%   [M, RESULTS] = unwrap_brain(TIFFFILE, OPTS) analyzes an OME-TIFF image
+%   [M, RESULTS] = straighten_cortex(TIFFFILE, OPTS) analyzes an OME-TIFF image
 %   to extract equal-area ECM intensity profiles along the cortical surface. The
 %   function fits a polynomial surface to the boundary between PV and ECM channels,
 %   computes parabolic offsets, and samples intensity metrics across specified
@@ -64,7 +64,7 @@ function [M,results] = unwrap_brain(tiffFile, opts)
 %       'numSegments', 100, ...
 %       'profileLocations', (0:-50:-500)', ...
 %       'imgRotation', 90);
-%     [M, results] = unwrap_brain('slice1.ome.tiff', opts);
+%     [M, results] = straighten_cortex('slice1.ome.tiff', opts);
 %
 %   Dependencies:
 %     bfmatlab (Bio-Formats), parabola_offset, extract_equal_area_profiles,
