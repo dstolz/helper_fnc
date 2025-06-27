@@ -1,6 +1,8 @@
 %% ECM ANALYSIS
 % root = 'G:/Shared drives/CarasLab/IMAGES/';
-root = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-957';
+root = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-974';
+
+
 
 skipExisting = true;
 
@@ -39,9 +41,9 @@ while i <= length(ffn)
 
     [M,R] = straighten_cortex(ffn(i), ...
         surfaceWindow = [-1000 750], ...
-        profileLocations=0:-5:-600, ...
+        profileLocations = 0:-10:-600, ...
         numSegments = 100, ...
-        polyOrder = 5);
+        polyOrder = 3);
 
     Mg = imgaussfilt(M,[1 2]);
 
@@ -71,7 +73,7 @@ while i <= length(ffn)
     fprintf('\tsaving data ')
 
     ffnOut = fullfile(pth,fnAnalysis);
-    save(ffnOut,"M","Mg","R",'-v6');
+    save(ffnOut,"M","R",'-v6');
     fprintf('.')
 
     % takes too long to save figure because of all of the trapezoid patches
@@ -92,39 +94,75 @@ end
 
 %% 
 
-root = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-952';
 
 
-d = dir(fullfile(root,'**\*_R_*ECManalysis.mat'));
+ffnSectionsInfo = "C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/Trackers - Sections.csv";
 
-ffn = cellfun(@fullfile,{d.folder},{d.name},'uni',0);
-ffn = string(ffn)';
 
-ffn(2) = [];
+root = 'G:/Shared drives/CarasLab/IMAGES/';
 
-disp(ffn)
+pthOut = "C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/Prelim_Analysis";
 
-data = arrayfun(@load,ffn,'uni',0);
-data = cell2mat(data);
 
-%%
-M = [];
-z = 0;
+S = readtable(ffnSectionsInfo,TextType="string");
 
-use_fig;
-tiledlayout('flow');
-for i = 1:length(data)
-    % M(:,:,i) = data(i).M;
-    d = data(i);
-    [~,fn] = fileparts(d.R.params.tiffFile);
 
-    nexttile;
-    imagesc(d.R.M.x,d.R.M.y,d.M);
-    axis image
-    set(gca,'ydir','normal')
-    xline(0,'-w')
-    titlef(fn)
-    subtitlef('z = %.3f mm',z)
-    z = z - 0.35;
+subjects = unique(S.SubjectID);
+
+for k = 1:length(subjects)
+    d = dir(fullfile(root,sprintf('**\\%s*ECManalysis.mat',subjects(k))));
+    if isempty(d), continue; end
+
+
+    ffn = cellfun(@fullfile,{d.folder},{d.name},'uni',0);
+    ffn = string(ffn)';
+
+    % ffn(2) = [];
+
+    disp(ffn)
+
+    data = arrayfun(@load,ffn,'uni',0);
+    data = cell2mat(data);
+
+    % M = cat(3,data(:).M);
+
+    use_fig;
+    tl = tiledlayout('vertical');
+    tl.Padding = "tight";
+    tl.TileSpacing = "tight";
+    for i = 1:length(data)
+        D = data(i);
+        [~,fn] = fileparts(D.R.params.tiffFile);
+
+        sfn = fn(1:find(fn=='_',1,'last')-1);
+        ind = contains(S.ImageFilename,sfn);
+
+        % tok = string(split(fn,"_"));
+        s = S(ind,:);
+
+        Mg = imgaussfilt(D.M,[1 2]);
+
+        nexttile;
+
+
+        imagesc(D.R.M.x,D.R.M.y,Mg);
+        % imagesc(d.R.M.x,d.R.M.y,M(:,:,i));
+
+        axis image
+        set(gca,'ydir','normal')
+        xline(0,'-w')
+        titlef("%s %d%c-%c Axial #%d",s.SubjectID,s.Slide_,s.SliceID,s.Hemisphere,s.AtlasPlate_);
+    end
+    title(tl,subjects(k));
+    colorcet('L8')
+
+    ax = findobj(gcf,'type','axes');
+    set(ax,'clim',[0 10000])
+
+    % set(gcf,'Name',tok(1))
+    drawnow
+
+    ffnOut = fullfile(pthOut,subjects(k) + "_All.png");
+    saveas(gcf,ffnOut)
 
 end
