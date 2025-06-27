@@ -17,8 +17,11 @@ classdef ThresholdAdjuster < handle
     end
 
     methods
-        function obj = ThresholdAdjuster(I, ax)
-            % obj = ThresholdAdjuster(I) or ThresholdAdjuster(I, ax)
+        function obj = ThresholdAdjuster(I, ax, startThreshold)
+            % obj = ThresholdAdjuster(I)
+            % obj = ThresholdAdjuster(I, ax)
+            % obj = ThresholdAdjuster(I, ax, startThreshold)
+
             obj.OriginalImage = I;
             % Prepare grayscale for normalization
             if ndims(I)==3
@@ -29,8 +32,12 @@ classdef ThresholdAdjuster < handle
             Igray = im2double(Igray);
             obj.ImageNorm = (Igray - min(Igray(:))) / (max(Igray(:)) - min(Igray(:)));
 
-            % Default threshold via Otsu
-            obj.Threshold = graythresh(obj.ImageNorm);
+            if nargin == 3 && ~isempty(startThreshold)
+                obj.Threshold = startThreshold;
+            else
+                % Default threshold via Otsu
+                obj.Threshold = graythresh(obj.ImageNorm);
+            end
 
             % Setup axes and figure
             if nargin>1 && isa(ax,'matlab.graphics.axis.Axes')
