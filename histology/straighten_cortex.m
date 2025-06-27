@@ -215,10 +215,15 @@ if isempty(opts.surfaceXY)
     [~,i] = min(dists);
     rp = rp(i);
 
-    [xi,~,ic] = unique(rp.PixelList(:,1),'stable');
-    yi = accumarray(ic,rp.PixelList(:,2),[],@max);
+    x = rp.PixelList(:,1);
+    y = rp.PixelList(:,2);
     
-
+    xi = unique(x,'stable');
+    yi = zeros(size(xi));
+    nind = ~ind;
+    for i = 1:length(xi)
+        yi(i) = find(nind(:,i),1);
+    end
 
 
     % adjust x coordinates to zero at specified location
