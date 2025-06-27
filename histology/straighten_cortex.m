@@ -120,10 +120,13 @@ imgData = dataCell{1}{2,1};
 
 % Determine rotation
 if isempty(opts.imgRotation)
-    % Interactive rotate
+
     use_fig('histology');
     rot = InteractiveRotator(imgRef);
     rot.TargetAxis = gca;
+
+    disableDefaultInteractivity(gca);
+
     rot.start();
 
    
@@ -131,6 +134,8 @@ if isempty(opts.imgRotation)
     opts.imgFlipped = rot.Flipped;
 
     delete(rot);
+
+    enableDefaultInteractivity(gca);
 
 end
 
@@ -153,25 +158,36 @@ if opts.imgFlipped(2)
 end
 
 
+% clean isolated pixels
+bw = imgRef > 0;
+bwo = bwareaopen(bw,5);
+i = bw & ~bwo;
+imgRef(i) = 0;
+imgData(i) = 0;
 
 
+% Trim sides to meet data
+zind = all(imgRef == 0,1);
+imgRef(:,zind) = [];
+imgData(:,zind) = [];
+
+% make sure the top has some padding
+imgRef = [zeros(1,size(imgRef,2),'like',imgRef); imgRef];
+imgData = [zeros(1,size(imgData,2),'like',imgData); imgData];
 
 
 % imgRefProcessed = adapthisteq(imgRef);
 imgRefProcessed = imgaussfilt(imgRef,20);
 
 
-adj = ThresholdAdjuster(imgRefProcessed,gca);
+adj = ThresholdAdjuster(imgRefProcessed,gca,1/max(imgRefProcessed(:)));
 pixIntensityThreshold = adj.ThresholdOriginal;
 
-% snippet = imgRefProcessed(1:400,1:400);
-% snippet = snippet ./ max(snippet(:));
-% pixIntensityThreshold = graythresh(snippet);
 
 
 
 ind = imgRefProcessed < pixIntensityThreshold;
-ind(round(size(ind,1)/2):end,:) = false; % Only keep upper half
+ind(size(ind,1)-round(size(ind,1)/3):end,:) = false; % Only keep upper half
 rp = regionprops(ind, {'Area','PixelList','PixelIdxList','Centroid'});
 
 a = [rp.Area];
@@ -190,22 +206,30 @@ if isempty(opts.surfaceXY)
     clim([min(imgRef(:)), 0.2*max(imgRef(:))]);
     [x,y] = ginput(1);
     opts.surfaceXY = [x y];
-end
 
 
 
-% find region nearest to user input
-dists = arrayfun(@(s) min(hypot(s.PixelList(:,1) - opts.surfaceXY(1), s.PixelList(:,2) - opts.surfaceXY(2))), rp);
-[~,i] = min(dists);
-rp = rp(i);
 
-x = rp.PixelList(:,1);
-y = rp.PixelList(:,2);
-xi = unique(x);
-yi = nan(size(xi));
-for j = 1:length(yi)
-    xind = x == xi(j);
-    yi(j) = max(y(xind));
+    % find region nearest to user input
+    dists = arrayfun(@(s) min(hypot(s.PixelList(:,1) - opts.surfaceXY(1), s.PixelList(:,2) - opts.surfaceXY(2))), rp);
+    [~,i] = min(dists);
+    rp = rp(i);
+
+    [xi,~,ic] = unique(rp.PixelList(:,1),'stable');
+    yi = accumarray(ic,rp.PixelList(:,2),[],@max);
+    
+
+
+
+    % adjust x coordinates to zero at specified location
+    xi = xi - 1 - opts.surfaceXY(1);
+    % yi = yi - 1 - opts.surfaceXY(2);
+
+
+    % Surface coordinates
+    x_surface = (xi-1) * x_res;
+    y_surface = (yi-1) * y_res;
+
 end
 
 
@@ -218,20 +242,6 @@ x_img = x_img - opts.surfaceXY(1);
 
 x_img = x_res*x_img;
 y_img = y_res*y_img;
-
-
-% adjust x coordinates to zero at specified location
-xi = xi - 1 - opts.surfaceXY(1);
-% yi = yi - 1 - opts.surfaceXY(2);
-
-
-% Surface coordinates
-x_surface = (xi-1) * x_res;
-y_surface = (yi-1) * y_res;
-
-
-
-
 
 
 
@@ -253,11 +263,18 @@ y_surface(~ind_analysisX) = [];
 
 
 % surface fitting
-[pf,S,mu] = polyfit(x_surface, y_surface, opts.polyOrder);
-pv = polyval(pf, x_surface, [], mu);
+% [pf,S,mu] = polyfit(x_surface, y_surface, opts.polyOrder);
+% pv = polyval(pf, x_surface, [], mu);
+
+ft = fittype("poly"+opts.polyOrder);
+fopts = fitoptions( 'Method', 'LinearLeastSquares' );
+fopts.Normalize = 'on';
+fopts.Robust = 'LAR';
+[pf, gof] = fit(x_surface(:),y_surface(:), ft, fopts );
+pv = feval(pf,x_surface);
 residual = pv - y_surface;
-if S.rsquared < 0.95
-    fprintf(2,'Polynomial may be poorly fitted to surface. r^2 = %.4f\n',S.rsquared)
+if gof.adjrsquare < 0.95
+    fprintf(2,'Polynomial may be poorly fitted to surface. adjusted r^2 = %.4f\n',gof.adjrsquare)
 end
 
 isOut = isoutlier(residual);
@@ -266,7 +283,8 @@ y_surface(isOut) = [];
 
 % refit surface excluding outliers
 warning('off','MATLAB:polyfit:RepeatedPointsOrRescale');
-pf = polyfit(x_surface, y_surface, opts.polyOrder);
+% pf = polyfit(x_surface, y_surface, opts.polyOrder);.
+[pf, gof] = fit(x_surface(:),y_surface(:), ft, fopts );
 [x_off, y_off,L_arc] = parabola_offset(pf, x_surface([1 end]), opts.profileLocations);
 warning('on','MATLAB:polyfit:RepeatedPointsOrRescale');
 
@@ -307,7 +325,7 @@ colorcet('L8');
 clim([min(imgRef(:)), 0.2*max(imgRef(:))]);
 line(x_surface,y_surface,Color = 'r',Marker = '.',LineStyle = 'none');
 line(x_off(:,1),y_off(:,1),Color = 'w');
-line(0,polyval(pf, 0),LineWidth = 2, Marker = 'o',MarkerSize = 10,Color = 'm');
+line(0,feval(pf,0),LineWidth = 2, Marker = 'o',MarkerSize = 10,Color = 'm');
 drawnow
 
 
@@ -366,7 +384,7 @@ axis image
 clim([min(imgData(:)), 0.2*max(imgData(:))]);
 line(x_surface, y_surface, 'Color','r','LineWidth',1);
 line(x_off(:,1),y_off(:,1),'Color',[.8 .8 .8],'LineWidth',2);
-line(0,polyval(pf, 0),LineWidth = 2, Marker = 'o',MarkerSize = 10,Color = 'm');
+line(0,feval(pf,0),LineWidth = 2, Marker = 'o',MarkerSize = 10,Color = 'm');
 title('ECM');
 cm = colorcet('L5');
 colormap(gca,cm);
@@ -381,7 +399,7 @@ axis image
 clim([min(imgData(:)), 0.2*max(imgData(:))]);
 line(x_surface, y_surface, 'Color','r','LineWidth',1);
 line(x_off(:,1),y_off(:,1),'Color',[.8 .8 .8],'LineWidth',2);
-line(0,polyval(pf, 0),LineWidth = 2, Marker = 'o',MarkerSize = 10,Color = 'm');
+line(0,feval(pf,0),LineWidth = 2, Marker = 'o',MarkerSize = 10,Color = 'm');
 title('ECM');
 cm = colorcet('L5');
 colormap(gca,cm);
