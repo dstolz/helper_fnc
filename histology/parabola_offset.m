@@ -1,6 +1,7 @@
+function [x_off, y_off, L_arc] = parabola_offset(p, x, d, n)
 %PARABOLA_OFFSET Generate uniformly spaced offset curves and compute arc lengths
 %   [x_off, y_off, L_arc] = parabola_offset(p, x, d) computes offset curves
-%   for the polynomial defined by p over the domain x, shifted by distances in d.
+%   for the fit defined by cfit object p over the domain x, shifted by distances in d.
 %   Each curve is sampled uniformly in its own arc length (fixed point count,
 %   variable total length), and total arc lengths are returned.
 %
@@ -8,7 +9,7 @@
 %   number of sample points per curve (default = 200).
 %
 %   Inputs:
-%     p     - 1×M vector of polynomial coefficients [a_{M-1} ... a1 a0]
+%     p     - cfit object representing a polynomial fit
 %     x     - 1×2 vector [xmin, xmax] defining the base domain
 %     d     - K×1 or 1×K vector of signed offsets (positive outward, negative inward)
 %     n     - (optional) scalar number of points per curve (default: 200)
@@ -18,19 +19,11 @@
 %     y_off - n×K matrix; each column contains y-coordinates of an offset curve
 %     L_arc - 1×K row vector of total arc lengths for each offset curve
 
-function [x_off, y_off, L_arc] = parabola_offset(p, x, d, n)
-% Use argument validation and defaults
 arguments
-    p
+    p (1,1) cfit
     x (1,2) double
     d (:,1) double
     n (1,1) double = 200
-end
-
-mu = [];
-if iscell(p)
-    mu = p{2};
-    p = p{1};
 end
 
 % Domain endpoints
@@ -41,13 +34,9 @@ xmax = max(x);
 m = 1000;
 t = linspace(xmin, xmax, m)';
 
-if isempty(mu)
-    y = polyval(p, t);
-    dy = polyval(polyder(p), t);
-else
-    y = polyval(p, t, [], mu);
-    dy = polyval(polyder(p), t,[], mu);
-end
+% Evaluate fit and derivative
+y = feval(p, t);
+dy = differentiate(p, t);
 
 % Compute unit normals
 Lvec = sqrt(1 + dy.^2);
@@ -76,5 +65,4 @@ for i = 1:K
     x_off(:,i) = interp1(s, xf, su);
     y_off(:,i) = interp1(s, yf, su);
 end
-
-
+end
