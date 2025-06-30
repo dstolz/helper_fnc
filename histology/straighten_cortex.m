@@ -3,37 +3,39 @@ function [M,results] = straighten_cortex(tiffFile, opts)
 %
 %   [M, RESULTS] = straighten_cortex(TIFFFILE, OPTS) analyzes an OME-TIFF image
 %   to extract equal-area ECM intensity profiles along the cortical surface. The
-%   function fits a polynomial surface to the boundary between PV and ECM channels,
+%   function fits a polynomial surface to the boundary between two channels,
 %   computes parabolic offsets, and samples intensity metrics across specified
 %   distances from the surface.
 %
 %   Input Arguments
 %   ---------------
 %   TIFFFILE         Path to input OME-TIFF file (char vector). Required.
-%                    First channel is used as anatomical reference.
-%                    Second channel is used as data image.
 %
-%   OPTIONS (struct with fields):
-%     surfaceWindow     1×2 double [min max] analysis window in micrometers
-%                       relative to the detected surface (default: [-Inf, Inf]).
-%     numSegments       Scalar integer specifying number of segments per profile
-%                       (default: 50).
-%     polyOrder         Positive integer polynomial order for surface fitting
-%                       (default: 2).
-%     profileLocations  N×1 double vector of distances (μm) along the surface
-%                       normal for profile extraction (default: (0:-100:-1000)').
-%     imgRotation       Scalar rotation angle in degrees CCW; empty for interactive
-%                       selection (default: []).
-%     surfaceXY         1×2 double [x y] approximate pixel coordinate of reference
-%                       surface point; empty to manually pick via GUI (default: []).
-%     metrics           1×K cell array of strings specifying metrics to compute per
-%                       segment, e.g. {'sum','mean'} (default: {'sum'}).
-%     minMaskArea       Scalar minimum area (pixels) to consider for surface mask
-%                       (default: 10000).
-%     segmentHeight     Scalar height (μm) of each segment; computed from
-%                       profileLocations if empty (default: []).
-%     segmentSpacing    Scalar or vector spacing (μm) between segments; computed
-%                       from numSegments if empty (default: []).
+%   OPTS (struct with fields):
+%     refChannel       Scalar integer specifying which channel to use as anatomical
+%                      reference (default: 1).
+%     dataChannel      Scalar integer specifying which channel to use as data image
+%                      (default: 2).
+%     surfaceWindow    1×2 double [min max] analysis window in micrometers
+%                      relative to the detected surface (default: [-Inf, Inf]).
+%     numSegments      Scalar integer specifying number of segments per profile
+%                      (default: 50).
+%     polyOrder        Positive integer polynomial order for surface fitting
+%                      (default: 2).
+%     profileLocations N×1 double vector of distances (μm) along the surface
+%                      normal for profile extraction (default: (0:-100:-1000)').
+%     imgRotation      Scalar rotation angle in degrees CCW; empty for interactive
+%                      selection (default: []).
+%     surfaceXY        1×2 double [x y] approximate pixel coordinate of reference
+%                      surface point; empty to manually pick via GUI (default: []).
+%     metrics          1×K cell array of strings specifying metrics to compute per
+%                      segment, e.g. {'sum','mean'} (default: {'sum'}).
+%     minMaskArea      Scalar minimum area (pixels) to consider for surface mask
+%                      (default: 10000).
+%     segmentHeight    Scalar height (μm) of each segment; computed from
+%                      profileLocations if empty (default: []).
+%     segmentSpacing   Scalar or vector spacing (μm) between segments; computed
+%                      from numSegments if empty (default: []).
 %
 %   Output Arguments
 %   ----------------
@@ -62,6 +64,8 @@ function [M,results] = straighten_cortex(tiffFile, opts)
 %
 %   Example:
 %     opts = struct( ...
+%       'refChannel',1, ...
+%       'dataChannel',2, ...
 %       'surfaceWindow', [-500, 300], ...
 %       'numSegments', 100, ...
 %       'profileLocations', (0:-50:-500)', ...
@@ -72,25 +76,25 @@ function [M,results] = straighten_cortex(tiffFile, opts)
 %     bfmatlab (Bio-Formats), parabola_offset, extract_equal_area_profiles,
 %     colorcet, use_fig, imrotate, adapthisteq, imgaussfilt, regionprops.
 %
-% see also, parabola_offset, extract_equal_area_profiles
+% see also parabola_offset, extract_equal_area_profiles
 
 arguments
     tiffFile (1,:) char {mustBeFile}
-
+    opts.refChannel   (1,1) double {mustBePositive,mustBeInteger} = 1
+    opts.dataChannel  (1,1) double {mustBePositive,mustBeInteger} = 2
     opts.surfaceWindow   (1,2) double = [-inf inf]
-    opts.numSegments (1,1) double = 50
-    opts.polyOrder (1,1) double {mustBePositive,mustBeInteger} = 2
-    opts.profileLocations (:,1) double = 0:-100:-1000
-    opts.imgRotation double = []                 % empty = interactive rotation
-    opts.metrics (1,:) = {'sum'}
-    opts.surfaceXY   double = []
-    opts.minMaskArea (1,1) double = 10000;
-    opts.segmentHeight double = []
-    opts.segmentSpacing double = []
+    opts.numSegments     (1,1) double = 50
+    opts.polyOrder       (1,1) double {mustBePositive,mustBeInteger} = 2
+    opts.profileLocations(:,1) double = (0:-100:-1000)'
+    opts.imgRotation     double = []
+    opts.surfaceXY       double = []
+    opts.metrics         (1,:) cell = {'sum'}
+    opts.minMaskArea     (1,1) double = 10000
+    opts.segmentHeight   double = []
+    opts.segmentSpacing  double = []
 end
 
 [~,tiffFn] = fileparts(tiffFile);
-
 
 % Load image and OME metadata
 dataCell = bfopen(tiffFile);
@@ -105,17 +109,15 @@ for i = 1:length(allKeys)
     info.(matlab.lang.makeValidName(key)) = value;
 end
 
+% Extract channels per user selection
+imgRef  = dataCell{1}{opts.refChannel,1};
+imgData = dataCell{1}{opts.dataChannel,1};
+
+
+
 % Get spatial metadata (microns)
 x_res = info.GlobalXResolution;
 y_res = info.GlobalYResolution;
-
-
-% Extract channels and rotate if needed
-imgRef  = dataCell{1}{1,1};
-imgData = dataCell{1}{2,1};
-
-
-
 
 
 % Determine rotation
