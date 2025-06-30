@@ -64,6 +64,8 @@ classdef InteractiveRotator < handle
 
         function keyPressCallback(obj, src, evt)
             % Handle key presses to adjust angle or flips
+            k = lower(evt.Key);
+
             mods = evt.Modifier;
             if ismember('shift',mods)
                 step = obj.CoarseStep;
@@ -72,22 +74,17 @@ classdef InteractiveRotator < handle
             else
                 step = obj.DefaultStep;
             end
-            k = lower(evt.Key);
+            % fprintf('Key received: %s\n',k)
             switch k
                 case obj.HKey,     obj.Flipped(2) = ~obj.Flipped(2);
                 case obj.VKey,     obj.Flipped(1) = ~obj.Flipped(1);
-                case obj.ResetKey
-                    obj.Angle = 0;
-                    obj.Flipped = false(1,2);
+                case obj.ResetKey, obj.Angle = 0; obj.Flipped = false(1,2);
                 case obj.LeftKey,  obj.Angle = obj.Angle - step;
                 case obj.RightKey, obj.Angle = obj.Angle + step;
                 case obj.UpKey,    obj.Angle = obj.Angle + obj.BigStep;
                 case obj.DownKey,  obj.Angle = obj.Angle - obj.BigStep;
-                case obj.AcceptKey
-                    uiresume(src);
-                    return;
-                otherwise
-                    return;
+                case obj.AcceptKey,uiresume(obj.FigureHandle); return
+                otherwise, return
             end
             obj.Angle = mod(obj.Angle,360);
             obj.applyTransform();
