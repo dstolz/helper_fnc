@@ -179,7 +179,8 @@ imgData = [zeros(1,size(imgData,2),'like',imgData); imgData];
 % imgRefProcessed = adapthisteq(imgRef);
 imgRefProcessed = imgaussfilt(imgRef,20);
 
-
+% Manually determine image threshold
+% adj = ThresholdAdjuster(imgRef,gca,1/max(imgRef(:))); % NOTE: WILL TAKE A LONG TIME TO THRESHOLD IMAGES WITH COMPLEX CONTOURS
 adj = ThresholdAdjuster(imgRefProcessed,gca,1/max(imgRefProcessed(:)));
 pixIntensityThreshold = adj.ThresholdOriginal;
 
@@ -255,10 +256,8 @@ y_img = y_res*y_img;
 % length. We'll just include more than we need and then trim to size after
 % we've calculated arc lengths
 pwin = opts.surfaceWindow;
-% pwins = sign(pwin);
-% pwin = pwins .* (abs(pwin) * 2);
 ind_analysisX = x_surface >= pwin(1) & x_surface <= pwin(2);
-% x_zeroOffset = find(ind_analysisX,1);
+
 x_surface(~ind_analysisX) = [];
 y_surface(~ind_analysisX) = [];
 
@@ -268,13 +267,13 @@ y_surface(~ind_analysisX) = [];
 
 
 % surface fitting
-% [pf,S,mu] = polyfit(x_surface, y_surface, opts.polyOrder);
-% pv = polyval(pf, x_surface, [], mu);
-
+warning('off','curvefit:fit:iterationLimitReached');
 ft = fittype("poly"+opts.polyOrder);
-fopts = fitoptions( 'Method', 'LinearLeastSquares' );
+fopts = fitoptions('Method', 'LinearLeastSquares');
 fopts.Normalize = 'on';
 fopts.Robust = 'LAR';
+fopts.Upper = Inf(1,opts.polyOrder+1);
+fopts.Lower = [0, -Inf(1,opts.polyOrder)];
 [pf, gof] = fit(x_surface(:),y_surface(:), ft, fopts );
 pv = feval(pf,x_surface);
 residual = pv - y_surface;
@@ -287,32 +286,14 @@ x_surface(isOut) = [];
 y_surface(isOut) = [];
 
 % refit surface excluding outliers
-warning('off','MATLAB:polyfit:RepeatedPointsOrRescale');
 % pf = polyfit(x_surface, y_surface, opts.polyOrder);.
 [pf, gof] = fit(x_surface(:),y_surface(:), ft, fopts );
 [x_off, y_off,L_arc] = parabola_offset(pf, x_surface([1 end]), opts.profileLocations);
-warning('on','MATLAB:polyfit:RepeatedPointsOrRescale');
-
-% ds = hypot(diff(x_off,1,1), diff(y_off,1,1));
-% s_full = [zeros(1,size(ds,2)); cumsum(ds,1)];
-% [~, idx0] = min(abs(x_off));
-% s = s_full - s_full(idx0);
-% ind = s < opts.surfaceWindow(1) | s > opts.surfaceWindow(2);
-% x_off(ind) = nan;
-% y_off(ind) = nan;
-% 
-% % recompute arc length
-% ds = hypot(diff(x_off,1,1), diff(y_off,1,1));
-% s = [zeros(1,size(ds,2)); cumsum(ds,1,"omitmissing")];
-% L_arc = max(s,[],1);
-
-
-
+warning('on','curvefit:fit:iterationLimitReached');
 
 % compute segment spacing
 avg_res = mean([x_res,y_res]);
 if isempty(opts.segmentHeight)
-    % segmentHeight = abs(diff(opts.profileLocations(1:2))) / avg_res;
     segmentHeight = abs(diff(opts.profileLocations(1:2)));
 end
 
@@ -421,6 +402,18 @@ for i = 1:length(edgeCoords)
     end
 end
 hold off
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
