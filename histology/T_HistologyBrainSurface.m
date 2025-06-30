@@ -29,7 +29,7 @@ while i <= length(ffn)
     if skipExisting && isfile(fullfile(pth,fnAnalysis))
         use_fig('histology');
         imshow(fullfile(pth,fnAnalysisPng));
-        title('EXISTING IMAGE')
+        title('EXISTING IMAGE',Color = "r",FontWeight = "bold",FontSize = 20)
         r = input('Data already exists. Press any key to reanalyze or Enter to skip: ','s');
         if isempty(r)
             i = i + 1;
@@ -43,7 +43,7 @@ while i <= length(ffn)
         surfaceWindow = [-1000 750], ...
         profileLocations = 0:-10:-600, ...
         numSegments = 100, ...
-        polyOrder = 3);
+        polyOrder = 2);
 
     Mg = imgaussfilt(M,[1 2]);
 
@@ -63,7 +63,7 @@ while i <= length(ffn)
 
 
 
-    r = input('Use any key to try again or press Enter to save and continue: ',"s");
+    r = input('Enter to accept or type any key to try again: ',"s");
 
     if ~isempty(r)
         fprintf(2,'Trying again!\n')
