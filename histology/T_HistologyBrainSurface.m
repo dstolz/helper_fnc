@@ -1,6 +1,14 @@
 %% ECM ANALYSIS
 % root = 'G:/Shared drives/CarasLab/IMAGES/';
-root = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-974';
+% root = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-974';
+root = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-994';
+
+
+% d = dir(fullfile(root,'**\*WFA-PV_Z3*proj.tif')); fileSuffix = "_ECManalysis";
+d = dir(fullfile(root,'**\*dilution*proj.tif')); 
+
+
+fileSuffix = "_analysis";
 
 
 
@@ -8,12 +16,8 @@ skipExisting = true;
 
 addpath('C:/src/bfmatlab')
 
-d = dir(fullfile(root,'**\*WFA-PV_Z3*proj.tif'));
-
 ffn = cellfun(@fullfile,{d.folder},{d.name},'uni',0);
 ffn = string(ffn)';
-
-
 
 
 i = 1;
@@ -23,8 +27,8 @@ while i <= length(ffn)
 
     fprintf('%d of %d.\t%s ...',i,length(ffn),fn+ext)
 
-    fnAnalysis = fn + "_ECManalysis.mat";
-    fnAnalysisPng = fn + "_ECManalysis.png";
+    fnAnalysis = fn + fileSuffix + ".mat";
+    fnAnalysisPng = fn + fileSuffix + ".png";
 
     if skipExisting && isfile(fullfile(pth,fnAnalysis))
         use_fig('histology');
@@ -40,10 +44,13 @@ while i <= length(ffn)
 
 
     [M,R] = straighten_cortex(ffn(i), ...
-        surfaceWindow = [-1000 750], ...
+        surfaceWindow = [-1000 1000], ...
         profileLocations = 0:-10:-600, ...
         numSegments = 100, ...
-        polyOrder = 2);
+        refChannel = 1, ...
+        dataChannel = 1, ...
+        polyOrder = 4);
+
 
     Mg = imgaussfilt(M,[1 2]);
 
