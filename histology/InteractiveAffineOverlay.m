@@ -229,33 +229,44 @@ classdef InteractiveAffineOverlay < handle
                    'w             : Save composite image', ...
                    'o             : Save overlay object', ...
                    '?             : Show this help'};
-            if nargout==0, fprintf('%s\n',txt{:}); end
+            if nargout==0, fprintf('%s\n',txt{:}); clear txt; end
         end
 
-        %% Rendering update
-        function updateOverlay(obj)
-            fg = obj.fgRGB; alpha = obj.alphaRaw;
-            if obj.flipH, fg = fliplr(fg); alpha = fliplr(alpha); end
-            if obj.flipV, fg = flipud(fg); alpha = flipud(alpha); end
-            theta = deg2rad(obj.thetaDeg); sc = obj.scale;
-            cx = size(fg,2)/2; cy = size(fg,1)/2;
-            T = [1 0 0; 0 1 0; -cx -cy 1]* ...
-                [sc*cos(theta) sc*sin(theta) 0; -sc*sin(theta) sc*cos(theta) 0; 0 0 1]* ...
-                [1 0 0; 0 1 0; cx cy 1]* ...
-                [1 0 0; 0 1 0; obj.tx obj.ty 1];
-            tform = affine2d(T);
-            [wRGB,Rw] = imwarp(fg,tform,'OutputView',obj.Rbg);
-            wA = imwarp(alpha,tform,'OutputView',obj.Rbg);
-            set(obj.hOverlay,'CData',wRGB,'AlphaData',wA, ...
-                'XData',Rw.XWorldLimits,'YData',Rw.YWorldLimits);
-            if obj.showInfo
-                set(obj.hText,'String',sprintf('TX:%.1f TY:%.1f S:%.2f R:%.1f°', ...
-                    obj.tx,obj.ty,obj.scale,obj.thetaDeg),'Visible','on');
-            else
-                set(obj.hText,'Visible','off');
-            end
-            drawnow limitrate;
-        end
+%% Rendering update
+function updateOverlay(obj)
+    fg = obj.fgRGB; alpha = obj.alphaRaw;
+    if obj.flipH, fg = fliplr(fg); alpha = fliplr(alpha); end
+    if obj.flipV, fg = flipud(fg); alpha = flipud(alpha); end
+    theta = deg2rad(obj.thetaDeg);
+    sc = obj.scale;
+    cx = size(fg,2)/2;
+    cy = size(fg,1)/2;
+    % Build composite transform matrix
+    T = [1 0 0; 0 1 0; -cx -cy 1] * ...           % Translate origin to center
+        [sc*cos(theta) sc*sin(theta) 0; ...       % Scale & rotate
+         -sc*sin(theta) sc*cos(theta) 0; 0 0 1] * ...
+        [1 0 0; 0 1 0; cx cy 1] * ...             % Translate back
+        [1 0 0; 0 1 0; obj.tx obj.ty 1];         % Translation offset
+    % Create an affinetform2d object (transpose required)
+    tform = affinetform2d(T');
+    % Warp foreground and alpha
+    [wRGB, Rw] = imwarp(fg, tform, 'OutputView', obj.Rbg);
+    wA = imwarp(alpha, tform, 'OutputView', obj.Rbg);
+    % Update overlay only if graphics handles are still valid
+    if isgraphics(obj.hOverlay)
+        set(obj.hOverlay, 'CData', wRGB, 'AlphaData', wA, ...
+            'XData', Rw.XWorldLimits, 'YData', Rw.YWorldLimits);
+    end
+    if obj.showInfo && isgraphics(obj.hText)
+        set(obj.hText, 'String', sprintf('TX:%.1f TY:%.1f S:%.2f R:%.1f°', ...
+            obj.tx, obj.ty, obj.scale, obj.thetaDeg), 'Visible', 'on');
+    elseif isgraphics(obj.hText)
+        set(obj.hText, 'Visible', 'off');
+    end
+    drawnow limitrate;
+end
+
+
 
         %% Colormap GUI
         function selectColormap(obj)
