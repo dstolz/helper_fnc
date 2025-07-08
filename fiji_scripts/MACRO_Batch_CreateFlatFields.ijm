@@ -1,4 +1,3 @@
-
 //dfltDir = "G:/Shared drives/CarasLab/IMAGES";
 
 dir = getDirectory("Choose a Directory");
@@ -14,51 +13,55 @@ function listFilesRecursive(dir, suffix) {
             sublist = listFilesRecursive(path, suffix);
             result = Array.concat(result, sublist);
         } else if (endsWith(list[i], suffix)) {
-            print((count++) + ". " + path);
+            print((count++) + ". Found file: " + path);
             result = Array.concat(result, path);
         }
     }
     return result;
 }
 
-
-
-
 // --- Get file list ---
-suffix = getString("Enter a suffix:", "_ACx.tif");
-print("You entered: " + suffix);
+suffix = getString("Enter a suffix:", "_proj_ROI.tif");
+print("You entered suffix: " + suffix);
 
-fileList = listFilesRecursive(dir,suffix);
+fileList = listFilesRecursive(dir, suffix);
+print("Total files to process: " + fileList.length);
 
 // --- Process each file ---
+setBatchMode(true);
 count = 1;
 for (i = 0; i < fileList.length; i++) {
     inputFile = fileList[i];
-
+    print(count + ". Opening: " + inputFile);
     open(inputFile);
-    print((count) +". Preprocessing: " + inputFile);
 
+    // Split into channels
+    print("    Splitting into channels...");
     run("Split Channels");
 
-    // Select Channel 1 (C1)
+    // Duplicate Channel 2 (unaltered) and match bit depth
+    print("    Extracting Channel 2...");
     titles = getList("image.titles");
-    found = 0;
     for (j = 0; j < titles.length; j++) {
-        if (indexOf(titles[j], "C1-") != -1) {
+        if (indexOf(titles[j], "C2-") != -1) {
             selectWindow(titles[j]);
-            found = 1;
+            run("Duplicate...", "title=C2_Original");
+            run("16-bit");
+            print("      -> C2_Original duplicated and converted to 16-bit");
             break;
         }
     }
-    if (found == 0) {
-        print("C1 image not found in: " + inputFile);
-        close("*");
-        continue;
-    }
 
+    // Select and process Channel 1
+    print("    Processing Channel 1 pipeline...");
+    for (j = 0; j < titles.length; j++) {
+        if (indexOf(titles[j], "C1-") != -1) {
+            selectWindow(titles[j]);
+            break;
+        }
+    }
     run("Duplicate...", "title=C1_Original");
     run("Enhance Contrast...", "saturated=0.35 normalize");
-
     run("Duplicate...", "title=Illumination_Profile");
 
     run("16-bit");
@@ -69,17 +72,35 @@ for (i = 0; i < fileList.length; i++) {
     run("Convoluted Background Subtraction", "convolution=Mean radius=50");
     run("Enhance Contrast...", "saturated=0.35 normalize");
 
+
+    // Save output
     dirOut = File.getParent(inputFile);
     name = File.getName(inputFile);
     dotIndex = indexOf(name, ".");
     if (dotIndex != -1)
         newName = substring(name, 0, dotIndex) + "_FF" + substring(name, dotIndex);
     else
-        newName = name + "_FF";
-
+        newName = name + "_FF_stack";
     FFFile = dirOut + File.separator + newName;
-    print((count++) + ". Saving: " + FFFile);
-    saveAs("Tiff", FFFile);
 
+    saveAs("Tiff", FFFile);
+    print(count + ". Finished and saved.\n");
+
+    // Close all windows
     close("*");
+    count++;
 }
+setBatchMode(false);
+
+
+
+
+
+
+
+
+
+
+
+
+
