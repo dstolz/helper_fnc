@@ -326,6 +326,7 @@ edgeCoords = cell(nProfiles,1);
 sx = opts.surfaceXY(1);
 met = opts.metrics;
 
+
 parfor_progress(nProfiles);
 % for i = 1:nProfiles
 parfor i = 1:nProfiles

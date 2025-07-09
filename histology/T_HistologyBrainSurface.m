@@ -1,11 +1,9 @@
 %% ECM ANALYSIS
-% root = 'G:/Shared drives/CarasLab/IMAGES/';
-% root = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-974';
-root = 'G:/Shared drives/CarasLab/IMAGES/SUBJ-ID-994';
+root = 'C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/IMAGES/SUBJ-ID-957';
 
 
-% d = dir(fullfile(root,'**\*WFA-PV_Z3*proj.tif')); fileSuffix = "_ECManalysis";
-d = dir(fullfile(root,'**\*dilution*proj.tif')); 
+d = dir(fullfile(root,'**\*WFA-PV_Z3*proj.tif')); fileSuffix = "_ECManalysis";
+% d = dir(fullfile(root,'**\*dilution*proj.tif')); 
 
 
 fileSuffix = "_analysis";
@@ -43,31 +41,31 @@ while i <= length(ffn)
 
 
 
-    [M,R] = straighten_cortex(ffn(i), ...
+    M = straighten_cortex2(ffn(i), ...
         surfaceWindow = [-1000 1000], ...
-        profileLocations = 0:-10:-600, ...
-        numSegments = 100, ...
-        refChannel = 1, ...
-        dataChannel = 1, ...
+        profileWidth = 1000, ...
         polyOrder = 4);
+    % [M,R] = straighten_cortex(ffn(i), ...
+    %     surfaceWindow = [-1000 1000], ...
+    %     profileLocations = 0:-10:-600, ...
+    %     numSegments = 100, ...
+    %     refChannel = 1, ...
+    %     dataChannel = 1, ...
+    %     polyOrder = 4);
 
 
-    Mg = imgaussfilt(M,[1 2]);
-
-
-    nexttile
-    imagesc(R.M.x,R.M.y,Mg);
-    xline(0,'-w')
-    set(gca,'ydir','normal');
-    title('ECM');
-    xlabel('rostrocaudal distance (\mum)');
-    ylabel('lateromedial distance (\mum)');
-    colorcet('L16');
-    colorbar
-
-
+    tl = use_fig_tiledlayout;
+    tl.Padding = "tight";
+    tl.TileSpacing = "tight";
+    for j = 1:size(M.data,3)
+        nexttile
+        imagesc(M.x,M.y,M.data(:,:,j));
+        clim([0 0.5*max(M.data(:,:,j),[],"all")]);
+        axis image
+        set(gca,'ydir','normal')
+    end
+    colorcet('L8')
     drawnow
-
 
 
     r = input('Enter to accept or type any key to try again: ',"s");
