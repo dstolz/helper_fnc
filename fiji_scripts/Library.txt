@@ -1,0 +1,23 @@
+// Recursive file listing
+function listFilesRecursivePattern(dir, regex) {
+    list   = getFileList(dir);
+    result = newArray();
+    for (i = 0; i < list.length; i++) {
+        path = dir + list[i];
+        if (File.isDirectory(path)) {
+            sub = listFilesRecursivePattern(path, regex);
+            result = Array.concat(result, sub);
+        } else if (matches(list[i], regex)) {
+            result = Array.concat(result, newArray(path));
+        }
+    }
+    return result;
+}
+
+// Utility: Convert glob to regex
+function globsToRegex(glob) {
+    regex = replace(glob, "\\.", "\\\\.");
+    regex = replace(regex, "*", ".*");
+    regex = replace(regex, "?", ".");
+    return "^" + regex + "$";
+}
