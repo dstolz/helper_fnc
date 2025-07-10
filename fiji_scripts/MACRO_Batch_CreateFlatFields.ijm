@@ -3,23 +3,6 @@
 dir = getDirectory("Choose a Directory");
 count = 1;
 
-// --- Recursive file collection ---
-function listFilesRecursive(dir, suffix) {
-    list = getFileList(dir);
-    result = newArray();
-    for (i = 0; i < list.length; i++) {
-        path = dir + list[i];
-        if (File.isDirectory(path)) {
-            sublist = listFilesRecursive(path, suffix);
-            result = Array.concat(result, sublist);
-        } else if (endsWith(list[i], suffix)) {
-            print((count++) + ". Found file: " + path);
-            result = Array.concat(result, path);
-        }
-    }
-    return result;
-}
-
 // --- Get file list ---
 suffix = getString("Enter a suffix:", "_proj_ROI.tif");
 print("You entered suffix: " + suffix);
@@ -36,7 +19,6 @@ for (i = 0; i < fileList.length; i++) {
     open(inputFile);
 
     // Split into channels
-    print("    Splitting into channels...");
     run("Split Channels");
 
     // Duplicate Channel 2 (unaltered) and match bit depth
@@ -47,7 +29,6 @@ for (i = 0; i < fileList.length; i++) {
             selectWindow(titles[j]);
             run("Duplicate...", "title=C2_Original");
             run("16-bit");
-            print("      -> C2_Original duplicated and converted to 16-bit");
             break;
         }
     }
