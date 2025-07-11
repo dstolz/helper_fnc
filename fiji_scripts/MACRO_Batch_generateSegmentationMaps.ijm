@@ -12,7 +12,6 @@ if (useROIMask) {
     patternROI = getString("ROI search pattern:", "*ROImask.tif");
 }
 
-
 // Gather all matching files
 regex    = globsToRegex(pattern);
 fileList = listFilesRecursivePattern(parentDir, regex);
@@ -60,32 +59,38 @@ for (i = 0; i < fileList.length; i++) {
 
 print("=== DONE ===");
 
-
-// Main processing: mask multiplication, then segment channel 1
+// Main processing: mask multiplication, segment channel 1 and recombine with channel 2
 function processFile(path, classifier, maskPath) {
     // Open and split channels
     open(path);
     origTitle = getTitle();
     run("Split Channels");
     c1Title = "C1-" + origTitle;
+    c2Title = "C2-" + origTitle;
     selectWindow(c1Title);
 
+    // Background subtraction
     run("Subtract Background...", "rolling=20");
 
-    // Apply binary mask by multiplication
+    // Apply binary mask to channel 1
     if (File.exists(maskPath)) {
         open(maskPath);
         maskTitle = getTitle();
         run("Make Binary");
         run("32-bit");
         imageCalculator("Multiply create 32-bit", c1Title, maskTitle);
+        c1Processed = getTitle(); // result of multiplication
+    } else {
+        c1Processed = c1Title;
     }
 
-    // Segment
+    // Segment masked channel 1
     print("> Segmenting ...");
-    run("Segment Image With Labkit", "segmenter_file=[" + classifier + "] use_gpu=true");
-    
-    // Prepare output filename with ROI suffix if available
+    selectWindow(c1Processed);
+    run("Segment Image With Labkit", "segmenter_file=[" + classifier + "] use_gpu=false");
+    segTitle = getTitle();
+
+    // Prepare output filename with ROI suffix
     name2 = File.getName(path);
     dot2  = lastIndexOf(name2, ".");
     if (dot2 > 0) {
@@ -95,57 +100,12 @@ function processFile(path, classifier, maskPath) {
     }
     dir = File.getParent(path) + File.separator;
 
-    // Compute mask suffix
-    maskSuffix = "";
-    if (File.exists(maskPath)) {
-        maskName2 = File.getName(maskPath);
-        dot3      = lastIndexOf(maskName2, ".");
-        if (dot3 > 0) {
-            maskBase2 = substring(maskName2, 0, dot3);
-        } else {
-            maskBase2 = maskName2;
-        }
-        if (startsWith(maskBase2, base2)) {
-            maskSuffix = substring(maskBase2, lengthOf(base2), lengthOf(maskBase2));
-        } else {
-            maskSuffix = "_" + maskBase2;
-        }
-    }
-
-    // Save output
-    ffnOut = dir + base2 + maskSuffix + "_seg.tif";
-    print("> Saving segmentation as: " + ffnOut;
+    // Save final recombined output
+    ffnOut = dir + base2 + "_seg.tif";
+    print("> Saving merged output as: " + ffnOut);
     saveAs("Tiff", ffnOut);
 
+    // Cleanup
     close("*");
     run("Collect Garbage");
-}
-
-
-
-
-// Recursive file listing
-function listFilesRecursivePattern(dir, regex) {
-    list   = getFileList(dir);
-    result = newArray();
-    for (i = 0; i < list.length; i++) {
-        path = dir + list[i];
-        if (File.isDirectory(path)) {
-            sub = listFilesRecursivePattern(path, regex);
-            result = Array.concat(result, sub);
-        } else if (matches(list[i], regex)) {
-            result = Array.concat(result, newArray(path));
-        }
-    }
-    return result;
-}
-
-
-
-// Utility: Convert glob to regex
-function globsToRegex(glob) {
-    regex = replace(glob, "\\.", "\\\\.");
-    regex = replace(regex, "*", ".*");
-    regex = replace(regex, "?", ".");
-    return "^" + regex + "$";
 }

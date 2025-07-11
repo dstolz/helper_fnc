@@ -8,17 +8,17 @@ suffix       = getString("Suffix for saved mask files (without extension):", "_R
 skipExisting = getBoolean("Skip files if output already exists?");
 
 // Build regex for search
-globPattern = globToRegex(pattern);
+regex = globsToRegex(pattern);
 
 // Gather all files recursively
-fileList = listFilesRecursivePattern(parentDir, globPattern);
+fileList = listFilesRecursivePattern(parentDir, regex);
 print("# files found: " + fileList.length);
 
 // Clear the Log and announce start
 call("ij.IJ.log", "");
 print("=== Batch ROI Mask Generation ===");
 print("Parent directory: " + parentDir);
-print("Processing files ending with: " + globPattern);
+print("Processing files ending with: " + regex);
 print("Mask output suffix: " + suffix);
 print("---------------------------------------------");
 
@@ -38,29 +38,6 @@ print("---------------------------------------------");
 print("=== Batch mask generation complete ===");
 showMessage("Batch mask generation complete.");
 
-// Utility: Convert a glob pattern to a Java regex
-function globToRegex(glob) {
-    regex = replace(glob, "\\.", "\\\\.");  // escape dot
-    regex = replace(regex, "*", ".*");
-    regex = replace(regex, "?", ".");
-    return "^" + regex + "$";
-}
-
-// Recursive file collection
-function listFilesRecursivePattern(dir, regex) {
-    list = getFileList(dir);
-    result = newArray();
-    for (j = 0; j < list.length; j++) {
-        path = dir + list[j];
-        if (File.isDirectory(path)) {
-            sub = listFilesRecursivePattern(path, regex);
-            result = Array.concat(result, sub);
-        } else if (matches(list[j], regex)) {
-            result = Array.concat(result, path);
-        }
-    }
-    return result;
-}
 
 // Open, prompt ROI, create and save mask
 function processFile(path, suffix) {

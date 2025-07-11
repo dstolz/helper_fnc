@@ -1,4 +1,4 @@
-// ROI extraction & line profiling on channel 2
+// ROI extraction & profiling on channel 2
 
 print("=== ROI & Profile Macro Started ===");
 
@@ -7,12 +7,15 @@ File.setDefaultDirectory("C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/IMAGES");
 parentDir = getDirectory("Select parent directory...");
 print("Directory: " + parentDir);
 
-
+pattern     = getString("Image pattern:","*seg.tif");
 enlarge_px = getNumber("Enlarge ROI profiles (# pixels):", -3);
 thickness_um = getNumber("Profile thickness (µm):", 6);
 
 
-files = listFilesRecursive(parentDir, "_seg.tif");
+// Gather all matching files
+regex    = globsToRegex(pattern);
+files = listFilesRecursivePattern(parentDir, regex);
+
 
 sets = 0;
 
@@ -35,22 +38,6 @@ print("=== Completed: " + sets + " datasets ===");
 
 
 
-// --- Recursive file collection ---
-function listFilesRecursive(dir, suffix) {
-    list = getFileList(dir);
-    result = newArray();
-    for (i = 0; i < list.length; i++) {
-        path = dir + list[i];
-        if (File.isDirectory(path)) {
-            sublist = listFilesRecursive(path, suffix);
-            result = Array.concat(result, sublist);
-        } else if (endsWith(list[i], suffix)) {
-            result = Array.concat(result, path);
-        }
-    }
-    return result;
-}
-
 
 function processPair(seg){
     close("*");
@@ -65,7 +52,7 @@ function processPair(seg){
 
     // Build and save ROIs from the segmentation map
     open(seg);
-    setAutoThreshold("Otsu dark no-reset");
+    setAutoThreshold("Default dark no-reset");
     setOption("BlackBackground", true);
     run("Convert to Mask");
     run("Watershed");
@@ -75,7 +62,8 @@ function processPair(seg){
     dirPath  = substring(seg, 0, lastIndexOf(seg, "/") + 1);
     baseProb = substring(seg, lastIndexOf(seg, "/") + 1, lastIndexOf(seg, "."));
     roiPath  = dirPath + baseProb + "_ROIs.zip";
-    if(File.exists(roiPath)) File.delete(roiPath);
+
+
     roiManager("Save", roiPath);
     print("> Saved ROIs: " + roiPath);
     close();
@@ -95,19 +83,18 @@ function processPair(seg){
 
 
     nROI = roiManager("count");
-    print("> Processing " + nROI + " ROIs");
-    
-	run("Set Measurements...", "area mean standard min centroid center perimeter fit shape feret's integrated median skewness kurtosis redirect=None decimal=9");
-
+    print("> Processing " + nROI + " ROIs ...");
     
     for (r = 0; r < nROI; r++) {
     	roiManager("Select",r);
+    	
 		run("Make Band...", "band=" + thickness_um);
 		
 	    if (enlarge_px != 0)
 	    	run("Enlarge...", "enlarge=" + enlarge_px);
     }
 
+	run("Set Measurements...", "area mean standard min centroid center perimeter fit shape feret's integrated median skewness kurtosis redirect=None decimal=9");
     roiManager("Select All");
     roiManager("Measure");
 
@@ -117,6 +104,8 @@ function processPair(seg){
     // Cleanup
     close("*");
     roiManager("reset");
-    
     run("Collect Garbage");
 }
+
+
+
