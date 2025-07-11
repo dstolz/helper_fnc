@@ -9,7 +9,7 @@ print("Directory: " + parentDir);
 
 pattern     = getString("Image pattern:","*seg.tif");
 enlarge_px = getNumber("Enlarge ROI profiles (# pixels):", -3);
-thickness_um = getNumber("Profile thickness (µm):", 6);
+
 
 
 // Gather all matching files
@@ -21,7 +21,7 @@ sets = 0;
 
 print("=== Processing " + files.length + " datasets ===");
 
-setBatchMode(true);
+//setBatchMode(true);
     
 for (i = 0; i < files.length; i++) {
     name = File.getName(files[i]);
@@ -58,12 +58,12 @@ function processPair(seg){
     run("Watershed");
     run("Close-");
     run("Open");
-	run("Analyze Particles...", "size=150-750 circularity=0.40-1.00 exclude clear overlay add composite");
+	run("Analyze Particles...", "size=40-1000 circularity=0.20-1.00 exclude clear overlay add composite");
     dirPath  = substring(seg, 0, lastIndexOf(seg, "/") + 1);
     baseProb = substring(seg, lastIndexOf(seg, "/") + 1, lastIndexOf(seg, "."));
     roiPath  = dirPath + baseProb + "_ROIs.zip";
 
-
+	
     roiManager("Save", roiPath);
     print("> Saved ROIs: " + roiPath);
     close();
@@ -74,7 +74,7 @@ function processPair(seg){
     run("Split Channels");
     c2 = "C2-" + title;
     selectWindow(c2);
-    run("Enhance Contrast", "saturated=0.35");
+   // run("Enhance Contrast", "saturated=0.35");
     roiManager("Show All without labels");
 
     dirPath = substring(orig, 0, lastIndexOf(orig, "/") + 1);
@@ -83,16 +83,6 @@ function processPair(seg){
 
 
     nROI = roiManager("count");
-    print("> Processing " + nROI + " ROIs ...");
-    
-    for (r = 0; r < nROI; r++) {
-    	roiManager("Select",r);
-    	
-		run("Make Band...", "band=" + thickness_um);
-		
-	    if (enlarge_px != 0)
-	    	run("Enlarge...", "enlarge=" + enlarge_px);
-    }
 
 	run("Set Measurements...", "area mean standard min centroid center perimeter fit shape feret's integrated median skewness kurtosis redirect=None decimal=9");
     roiManager("Select All");
