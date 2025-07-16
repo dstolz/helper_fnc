@@ -68,15 +68,14 @@ function processTif(path) {
     
     selectWindow(c1Title);
 	run("Enhance Contrast", "saturated=0.35");
-	saveAs("PNG", dir + replace(c1Title,".tif","_C1.png"));
+	saveAs("PNG", dir + replace(origTitle,".tif","_C1.png"));
     
     selectWindow(c2Title);
 	run("Enhance Contrast", "saturated=0.35");
-	saveAs("PNG", dir + replace(c1Title,".tif","_C2.png"));
+	saveAs("PNG", dir + replace(origTitle,".tif","_C2.png"));
 	
 	
     close("*");
-	}
 }
 
 

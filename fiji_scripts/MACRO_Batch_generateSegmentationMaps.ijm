@@ -71,6 +71,7 @@ function processFile(path, classifier, maskPath) {
 
     // Background subtraction
     run("Subtract Background...", "rolling=20");
+    
 
     // Apply binary mask to channel 1
     if (File.exists(maskPath)) {
