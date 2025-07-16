@@ -28,7 +28,7 @@ while i <= length(ffn)
     fnAnalysis = fn + fileSuffix + ".mat";
     fnAnalysisPng = fn + fileSuffix + ".png";
 
-    if skipExisting && isfile(fullfile(pth,fnAnalysis))
+    if skipExisting && isfile(fnAnalysisPng)
         use_fig('histology');
         imshow(fullfile(pth,fnAnalysisPng));
         title('EXISTING IMAGE',Color = "r",FontWeight = "bold",FontSize = 20)
