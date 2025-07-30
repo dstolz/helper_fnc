@@ -19,6 +19,8 @@ classdef histologyLabeller < handle
         limTol              (1,2) double {mustBeInRange(limTol,0,1)} = [0 1]
         gamma               (1,1) double {mustBeFinite,mustBePositive} = 1
 
+        % showImgCorr         (1,1) logical = false
+
         activeID            (1,1) double {mustBeInteger,mustBeInRange(activeID,0,9)} = 0
     end
 
@@ -90,7 +92,7 @@ classdef histologyLabeller < handle
         function showMontage(obj)
             obj.orignalState = get(groot,'defaultAxesToolbarVisible');
             set(groot,'defaultAxesToolbarVisible', 'off')
-            obj.FigHandle = use_fig('montage');
+            obj.FigHandle = use_fig('histologyLabeller');
             set(obj.FigHandle, 'KeyPressFcn', @(src,evt)obj.keyPressCallback(evt));
             obj.renderMontage();
         end
@@ -115,7 +117,10 @@ classdef histologyLabeller < handle
                 obj.ImageTextHandles = cell(obj.nUp, 1);
                 obj.ImageHandles = cell(obj.nUp, 1);
 
-                for j = 1:(stopIdx - startIdx + 1)
+                v = 1:(stopIdx - startIdx + 1);
+                fprintf('Rendering images ...\n')
+                parfor_progress(length(v));
+                for j = v
                     idx = startIdx + j - 1;
                     nexttile(j);
                     img = obj.applyFilter(obj.subImages(:,:,idx));
@@ -128,7 +133,9 @@ classdef histologyLabeller < handle
                     labelColor = obj.getLabelColor(obj.subimageLabel(idx));
                     obj.ImageTextHandles{j} = text(1,3, labelStr, 'FontSize',12, 'FontWeight','bold', 'Color', labelColor);
                     obj.ImageHandles{j} = hImg;
+                    parfor_progress;
                 end
+                parfor_progress(0);
             end
 
             for j = 1:(stopIdx - startIdx + 1)
@@ -233,7 +240,8 @@ classdef histologyLabeller < handle
                     fprintf(' g           : Toggle Gaussian filter\n');
                     fprintf(' m           : Toggle Median filter\n');
                     fprintf(' t           : Print label summary\n');
-                    fprintf(' 0-9         : Assign label at mouse click\n');
+                    fprintf(' 0-9         : Assign label at left mouse click\n');
+                    fprintf(' Right click : Assign label ''0''\n')
                 case 'g'
                     obj.useGaussianFilter = ~obj.useGaussianFilter;
                     obj.useMedianFilter = false;
