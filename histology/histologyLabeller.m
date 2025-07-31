@@ -21,7 +21,7 @@ classdef histologyLabeller < handle
 
         % showImgCorr         (1,1) logical = false
 
-        activeID            (1,1) double {mustBeInteger,mustBeInRange(activeID,0,9)} = 0
+        activeID            (1,1) double {mustBeInteger,mustBeInRange(activeID,0,9)} = 1
     end
 
     properties (Access = private)
