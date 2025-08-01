@@ -10,9 +10,9 @@ fileSuffix = "_ECManalysis";
 
 
 
-skipExisting = true;
+skipExisting = false;
 
-addpath('C:/src/bfmatlab')
+
 
 ffn = cellfun(@fullfile,{d.folder},{d.name},'uni',0);
 ffn = string(ffn)';
@@ -42,7 +42,7 @@ while i <= length(ffn)
 
 
     M = straighten_cortex2(ffn(i), ...
-        surfaceWindow = [-2000 2000], ...
+        surfaceWindow = [-2000 4000], ...
         profileWidth = 1000, ...
         polyOrder = 4);
 
@@ -98,6 +98,8 @@ while i <= length(ffn)
     fprintf(' done\n')
 
     i = i + 1;
+
+    if i > length(ffn), break; end
 end
 
 
@@ -108,7 +110,6 @@ end
 procID = "PNN25A";
 
 ffnSectionsInfo = "C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/IMAGES/Trackers - Sections.csv";
-
 
 root = 'C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/IMAGES';
 
@@ -159,8 +160,6 @@ for k = 1:length(subjects)
         xline(0,'-w')
         titlef("%s %d%c-%c Axial #%d",s.SubjectID,s.Slide_,s.SliceID,s.Hemisphere,s.AtlasPlate_);
 
-
-        
     end
     title(tl,subjects(k));
     colorcet('L8')
@@ -168,31 +167,38 @@ for k = 1:length(subjects)
     ax = findobj(gcf,'type','axes');
     set(ax,'clim',[0 40])
 
+    linkaxes;
+
+
     % set(gcf,'Name',tok(1))
     drawnow
 
+    pause;
+    
     ffnOut = fullfile(pthOut,subjects(k) + "_ECM.png");
     saveas(gcf,ffnOut)
 
 end
 
+
+
 %% Summed by depth
 
 
-subjectGroups = ["SUBJ-ID-974"    "Baseline" "A"; ...
+subjectGroups = [ ...
+    "SUBJ-ID-974"    "Baseline" "A"; ...
     "SUBJ-ID-975"    "Baseline"  "A"; ...
-    "SUBJ-ID-976"    "NE_14d" "B"; ...
-    "SUBJ-ID-977"    "NE_14d"  "B"; ...
-    "SUBJ-ID-978"    "Sham_14d" "C"; ...
-    "SUBJ-ID-979"    "Sham_14d" "C"; ...
-    "SUBJ-ID-940"    "NE_14d"  "B"; ...
-    "SUBJ-ID-952"    "NE_35d"  "D"; ...
-    "SUBJ-ID-954"    "NE_35d"  "D"; ...
-    "SUBJ-ID-957"    "Sham_35d" "E"; ...
-    "SUBJ-ID-958"    "Sham_35d"  "E"];
+    "SUBJ-ID-976"    "NE14" "B"; ...
+    "SUBJ-ID-977"    "NE14"  "B"; ...
+    "SUBJ-ID-940"    "NE14"  "B"; ...
+    "SUBJ-ID-978"    "Sham14" "C"; ...
+    "SUBJ-ID-979"    "Sham14" "C"; ...
+    "SUBJ-ID-952"    "NE35"  "D"; ...
+    "SUBJ-ID-954"    "NE35"  "D"; ...
+    "SUBJ-ID-957"    "Sham35" "E"; ...
+    "SUBJ-ID-958"    "Sham35"  "E"];
 
 
-subjectGroups = sortrows(subjectGroups,3);
 
 depths = 0:-100:-600;
 
@@ -240,6 +246,7 @@ for p = 1:length(targetAtlasPlates)
             if ~any(ind), continue; end
 
             AP(k,p).dataAvailable = true;
+            AP(k,p).x = M.x;
 
             s = S(ind,:);
 
@@ -259,11 +266,11 @@ for p = 1:length(targetAtlasPlates)
 end
 
 %% Plot depth profiles
-depthInd = depths == -400;
+depthInd = depths == -200;
 
-meanSubtract = false;
+meanSubtract = true;
 
-ug = unique(subjectGroups(:,2));
+ug = unique(subjectGroups(:,2),'stable');
 
 up = unique([AP.atlasPlate]);
 
@@ -294,18 +301,19 @@ for p = 1:length(up)
         for j = 1:length(ap)
             if ~ap(j).dataAvailable, continue; end
             y = ap(j).D(depthInd,:);
-            y = smoothdata(y,"gaussian",50);
+            y = smoothdata(y,"gaussian",200);
             if meanSubtract
                 y = y - mean(y);
                 % y = y - mean(y(1:100));
             end
-            plot(y, ...
+            plot(ap(j).x,y, ...
                 DisplayName=sprintf('%s [%s]',ug(g),extractAfter(ap(j).subjectID,8)), ...
                 Color = cm(g,:), ...
                 LineWidth = 2);
         end
 
     end
+    xline(0,'-k',LineWidth = 2,HandleVisibility="off")
     yline(0,'-k',LineWidth = 2,HandleVisibility="off")
     hold off
     grid on
@@ -399,9 +407,225 @@ for sbj = 1:length(subjects)
 
         set(gca,'ydir','normal');
 
+        xline(0,'-w');
+
         clim([0 80])
     end
 
 end
-
+linkaxes;
 colorcet('L5')
+
+
+
+%% PV-ECM correlation
+targetAtlasPlates = 9:14;
+
+
+windowSize = 21;         % odd integer window size
+
+% Create averaging kernel
+% kernel = ones(windowSize, windowSize, 'double') / (windowSize^2);
+gsigma = windowSize/4;
+kernel = fspecial('gaussian', windowSize, gsigma);
+W      = sum(kernel(:));         % sum of all weights in the kernel
+
+procID = "PNN25A";
+
+ffnSectionsInfo = "C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/IMAGES/Trackers - Sections.csv";
+
+
+root = 'C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/IMAGES';
+
+pthOut = "C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/Prelim_Analysis";
+
+
+S = readtable(ffnSectionsInfo,TextType="string",NumHeaderLines=1);
+
+S = S(contains(S.ProcessingID,procID),:);
+
+subjects = subjectGroups(:,1);
+ug = unique(subjectGroups(:,2));
+
+
+use_fig('subj_plates')
+
+tl = tiledlayout(length(subjects), length(targetAtlasPlates));
+tl.Padding = 'tight';
+tl.TileSpacing = 'tight';
+
+nw = windowSize^2;              % number of pixels in window
+
+for sbj = 1:length(subjects)
+    grp = subjectGroups(subjectGroups(:,1) == subjects(sbj),2);
+
+    for ap = 1:length(targetAtlasPlates)
+        ind = S.SubjectID == subjects(sbj) & ...
+            S.AtlasPlate_ == targetAtlasPlates(ap);
+        s = S(ind,:);
+
+        nexttile
+
+        if sum(ind) > 1
+            s = s(s.Hemisphere=="L",:);
+        end
+
+        if ap == 1
+            ylabel(sprintf('%s [%s]',grp,extractAfter(subjects(sbj),8)),Interpreter="none")
+        end
+        if sbj == 1
+            titlef("Plate %d",targetAtlasPlates(ap))
+        end
+        xticks([]);
+        yticks([]);
+        box off
+        if ~any(ind), continue; end
+        
+        fn = s.ImageFilename + "_proj_ECManalysis.mat";
+
+        d = dir(fullfile(root,"**\"+fn));
+
+        if isempty(d), continue; end
+
+        ffn = fullfile(d.folder,d.name);
+
+        load(ffn)
+
+        A = M.data(:,:,1);
+        B = M.data(:,:,2);
+
+        sumA  = conv2(A,  kernel, 'same');
+        sumB  = conv2(B,  kernel, 'same');
+        sumAB = conv2(A.*B, kernel, 'same');
+        sumA2 = conv2(A.^2, kernel, 'same');
+        sumB2 = conv2(B.^2, kernel, 'same');
+
+        %--- Compute Pearson correlation coefficient -------------------------------
+        rn   = sumAB - (sumA.*sumB)/W;
+        rd= sqrt((sumA2 - (sumA.^2)/W) .* (sumB2 - (sumB.^2)/W));
+
+        rd(rd==0) = eps;  % avoid division by zero
+
+        r = rn ./ rd;
+
+        mc = max(r(:));
+
+        r = imgaussfilt(r,3);
+        r = r ./ max(r(:));
+        r = r .* mc;
+
+        imagesc(M.x,M.y,r);
+
+        xticks([]);
+        yticks([]);
+        box off
+
+        if ap == 1
+            ylabel(sprintf('%s [%s]',grp,extractAfter(subjects(sbj),8)),Interpreter="none")
+        end
+        if sbj == 1
+            titlef("Plate %d",targetAtlasPlates(ap))
+        end
+
+        set(gca,'ydir','normal');
+
+        % clim([0 1])
+    end
+
+end
+linkaxes;
+colorcet('L18')
+
+
+%% dist
+%% Show All Plates for All subjects
+targetAtlasPlates = 9:14;
+
+procID = "PNN25A";
+
+ffnSectionsInfo = "C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/IMAGES/Trackers - Sections.csv";
+
+
+root = 'C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/IMAGES';
+
+pthOut = "C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/Prelim_Analysis";
+
+
+S = readtable(ffnSectionsInfo,TextType="string",NumHeaderLines=1);
+
+S = S(contains(S.ProcessingID,procID),:);
+
+subjects = subjectGroups(:,1);
+ug = unique(subjectGroups(:,2));
+
+
+use_fig('subj_plates')
+
+tl = tiledlayout(length(subjects), length(targetAtlasPlates));
+tl.Padding = 'tight';
+tl.TileSpacing = 'tight';
+
+for sbj = 1:length(subjects)
+    grp = subjectGroups(subjectGroups(:,1) == subjects(sbj),2);
+
+    for ap = 1:length(targetAtlasPlates)
+        ind = S.SubjectID == subjects(sbj) & ...
+            S.AtlasPlate_ == targetAtlasPlates(ap);
+        s = S(ind,:);
+
+        nexttile
+
+        if sum(ind) > 1
+            s = s(s.Hemisphere=="L",:);
+        end
+
+        if ap == 1
+            ylabel(sprintf('%s [%s]',grp,extractAfter(subjects(sbj),8)),Interpreter="none")
+        end
+        if sbj == 1
+            titlef("Plate %d",targetAtlasPlates(ap))
+        end
+        xticks([]);
+        yticks([]);
+        box off
+        if ~any(ind), continue; end
+        
+        fn = s.ImageFilename + "_proj_ECManalysis.mat";
+
+        d = dir(fullfile(root,"**\"+fn));
+
+        if isempty(d), continue; end
+
+        ffn = fullfile(d.folder,d.name);
+
+        load(ffn)
+
+        y = M.data(:,:,2);
+
+        % q = quantile(y(:),[0.01 0.99]);
+        % y = min(max(y,q(1)),q(2));
+
+        imagesc(M.x,M.y,y);
+
+        xticks([]);
+        yticks([]);
+        box off
+
+        if ap == 1
+            ylabel(sprintf('%s [%s]',grp,extractAfter(subjects(sbj),8)),Interpreter="none")
+        end
+        if sbj == 1
+            titlef("Plate %d",targetAtlasPlates(ap))
+        end
+
+        set(gca,'ydir','normal');
+
+        clim([0 80])
+    end
+
+end
+linkaxes;
+colorcet('L5')
+
+
+
