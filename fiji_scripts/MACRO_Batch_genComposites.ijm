@@ -1,6 +1,8 @@
 // Robust batch macro for Bio-Formats CZI import + Z-projection (Sum), skipping dialog and DAPI enhancement
 
-// Prompt user for top-level directory and a search string to filter files
+
+
+File.setDefaultDirectory("C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/IMAGES");
 dir = getDirectory("Choose the top-level directory");
 searchString = getString("Enter search string to filter CZI files", "");
 processFolder(dir, searchString);
@@ -17,11 +19,29 @@ function processFolder(folder, searchString) {
                 continue;
             }
             if (indexOf(path, "SLIDE") != -1) {
+                baseName = extractBaseName(path);
+                outPath = getOutputPath(path, baseName + ".png");
+                if (File.exists(outPath)) {
+                    print("Skipping existing SLIDE processed file: " + outPath);
+                    continue;
+                }
                 processSLIDEFile(path);
             }
             else if (indexOf(path, "Z3") != -1) {
+                baseName = extractBaseName(path);
+                outPath = getOutputPath(path, baseName + "_proj.tif");
+                if (File.exists(outPath)) {
+                    print("Skipping existing Z3 processed file: " + outPath);
+                    continue;
+                }
                 processZ3File(path);
             } else if (indexOf(path, "Z1") != -1) {
+                baseName = extractBaseName(path);
+                outPath = getOutputPath(path, baseName + "_dapi.png");
+                if (File.exists(outPath)) {
+                    print("Skipping existing Z1 processed file: " + outPath);
+                    continue;
+                }
                 //processZ1File(path);
             }
         }

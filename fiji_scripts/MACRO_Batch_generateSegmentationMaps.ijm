@@ -1,4 +1,4 @@
-// Recursive Batch Segmenting with Labkit in ImageJ Macro language
+// Recursive Batch Segmenting with Labkit in ImageJ Macro language, with skip-if-exists logic
 
 // Set your working directory
 File.setDefaultDirectory("C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/IMAGES");
@@ -19,23 +19,26 @@ print("=== BEGIN SEGMENTING  " + fileList.length + " IMAGES ===");
 
 for (i = 0; i < fileList.length; i++) {
     imagePath = fileList[i];
+    name = File.getName(imagePath);
+    dot = lastIndexOf(name, ".");
+    if (dot > 0) {
+        base = substring(name, 0, dot);
+    } else {
+        base = name;
+    }
+    outPath = File.getParent(imagePath) + File.separator + base + "_seg.tif";
+
+    if (File.exists(outPath)) {
+        print("[" + i + "] Skipping existing segmentation: " + outPath);
+        continue;
+    }
+
     print("[" + i + "] Processing: " + imagePath);
 
     // locate the matching mask
     maskPath = "";
     if (useROIMask) {
         dir  = File.getDirectory(imagePath);
-        name = File.getName(imagePath);
-
-        // strip extension without ternary
-        dot = lastIndexOf(name, ".");
-        if (dot > 0) {
-            base = substring(name, 0, dot);
-        } else {
-            base = name;
-        }
-
-        // find mask in same folder
         regexROI = globsToRegex(patternROI);
         files    = getFileList(dir);
         for (j = 0; j < files.length; j++) {
@@ -45,7 +48,7 @@ for (i = 0; i < fileList.length; i++) {
                 break;
             }
         }
-        
+
         if (File.exists(maskPath)) {
             print("> Mask: " + maskPath);
         } else {
@@ -67,11 +70,17 @@ function processFile(path, classifier, maskPath) {
     run("Split Channels");
     c1Title = "C1-" + origTitle;
     c2Title = "C2-" + origTitle;
+    
     selectWindow(c1Title);
+
+	c1Processed = c1Title;
+
 
     // Background subtraction
     run("Subtract Background...", "rolling=20");
     
+   	run("Enhance Contrast", "saturated=0.10");
+
 
     // Apply binary mask to channel 1
     if (File.exists(maskPath)) {
@@ -79,19 +88,23 @@ function processFile(path, classifier, maskPath) {
         maskTitle = getTitle();
         run("Make Binary");
         run("32-bit");
-        imageCalculator("Multiply create 32-bit", c1Title, maskTitle);
-        c1Processed = getTitle(); // result of multiplication
-    } else {
-        c1Processed = c1Title;
+        imageCalculator("Multiply create 32-bit", c1Processed, maskTitle);
+        c1Processed = getTitle();
     }
+
+	
+
 
     // Segment masked channel 1
     print("> Segmenting ...");
     selectWindow(c1Processed);
-    run("Segment Image With Labkit", "segmenter_file=[" + classifier + "] use_gpu=false");
+    run("Segment Image With Labkit", "segmenter_file=[" + classifier + "] use_gpu=true");
     segTitle = getTitle();
+    
+    selectWindow(segTitle);
+    run("8-bit");
 
-    // Prepare output filename with ROI suffix
+    // Save final output
     name2 = File.getName(path);
     dot2  = lastIndexOf(name2, ".");
     if (dot2 > 0) {
@@ -100,11 +113,41 @@ function processFile(path, classifier, maskPath) {
         base2 = name2;
     }
     dir = File.getParent(path) + File.separator;
-
-    // Save final recombined output
     ffnOut = dir + base2 + "_seg.tif";
+
     print("> Saving merged output as: " + ffnOut);
     saveAs("Tiff", ffnOut);
+    
+    
+    // Find maxima
+   	setAutoThreshold("Default dark no-reset");
+   	setOption("BlackBackground", true);
+	run("Convert to Mask");   
+
+	run("Morphological Filters", "operation=Opening element=Disk radius=1");
+	run("Morphological Filters", "operation=Closing element=Disk radius=1");
+	
+
+	// detect and remove small particles
+	run("Analyze Particles...", "size=0-78 clear add");
+	setForegroundColor(0, 0, 0);
+    run("Select All");
+	roiManager("Fill");
+	roiManager("Deselect");
+	roiManager("Delete");
+    
+	run("Chamfer Distance Map", "distances=[Chessknight (5,7,11)] output=[16 bits] normalize");
+	
+	run("Find Maxima...", "prominence=1 exclude output=List");
+	
+	ffnMax = dir + base2 + "_seg_maxima.csv";
+    
+	saveAs("Results", ffnMax);
+
+
+    //print("> Saved ROIs: " + roiPath);
+    print("> Saved maxima xy: " + ffnMax);
+
 
     // Cleanup
     close("*");
