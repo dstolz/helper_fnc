@@ -20,6 +20,12 @@ arguments
     tiffFile (1,:) char
 end
 
+img = [];
+info = [];
+xy_res = [];
+nChannels = [];
+if ~isfile(tiffFile), return; end
+
 % Open file with Bio-Formats
 T = bfopen(tiffFile);
 
