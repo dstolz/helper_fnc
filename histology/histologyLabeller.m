@@ -15,6 +15,10 @@ classdef histologyLabeller < handle
         cmapB               (1,:) char = 'L16'
         useGaussianFilter   (1,1) logical = false
         useMedianFilter     (1,1) logical = false
+        useNlmFilter        (1,1) logical = false
+        useWiener2Filter    (1,1) logical = false
+        useDoGFilter        (1,1) logical = false
+        showCenterPoint     (1,1) logical = false
         contrastLim         (1,2) double {mustBeNonnegative,mustBeFinite} = [0 1]
         limTol              (1,2) double {mustBeInRange(limTol,0,1)} = [0 1]
         gamma               (1,1) double {mustBeFinite,mustBePositive} = 1
@@ -122,7 +126,7 @@ classdef histologyLabeller < handle
                 parfor_progress(length(v));
                 for j = v
                     idx = startIdx + j - 1;
-                    nexttile(j);
+                    ax = nexttile(j);
                     img = obj.applyFilter(obj.subImages(:,:,idx));
                     img = imadjust(img,stretchlim(img,obj.limTol),[],obj.gamma);
                     hImg = imagesc(img);
@@ -131,6 +135,7 @@ classdef histologyLabeller < handle
                     axis image off;
                     labelStr = sprintf('%d [%d]', idx, obj.subimageLabel(idx));
                     labelColor = obj.getLabelColor(obj.subimageLabel(idx));
+                    ax.Color = labelColor;
                     obj.ImageTextHandles{j} = text(1,3, labelStr, 'FontSize',12, 'FontWeight','bold', 'Color', labelColor);
                     obj.ImageHandles{j} = hImg;
                     parfor_progress;
@@ -210,6 +215,11 @@ classdef histologyLabeller < handle
                     obj.contrastLim = [0 1];
                     obj.limTol = [0 1];
                     obj.gamma = 1;
+                    obj.useGaussianFilter = false;
+                    obj.useMedianFilter = false;
+                    obj.useNlmFilter = false;
+                    obj.useWiener2Filter = false;
+                    obj.useDoGFilter = false;
                     obj.renderMontage(true);
                 case 'q'
                     obj.currentImageSet = 1;
@@ -239,20 +249,50 @@ classdef histologyLabeller < handle
                     fprintf(' r           : Reset contrast and gamma\n');
                     fprintf(' g           : Toggle Gaussian filter\n');
                     fprintf(' m           : Toggle Median filter\n');
+                    fprintf(' n           : Toggle Non-Linear Means filter\n');
+                    fprintf(' z           : Toggle Wiener filter\n');
+                    fprintf(' d           : Toggle Difference of Gaussians filter\n');
+                    fprintf(' c           : Toggle center marker\n');
                     fprintf(' t           : Print label summary\n');
                     fprintf(' 0-9         : Assign label at left mouse click\n');
                     fprintf(' Right click : Assign label ''0''\n')
                 case 'g'
                     obj.useGaussianFilter = ~obj.useGaussianFilter;
-                    obj.useMedianFilter = false;
                     obj.renderMontage(true);
                 case 'm'
                     obj.useMedianFilter = ~obj.useMedianFilter;
-                    obj.useGaussianFilter = false;
                     obj.renderMontage(true);
+                case 'n'
+                    obj.useNlmFilter = ~obj.useNlmFilter;
+                    obj.renderMontage(true);
+                case 'z'
+                    obj.useWiener2Filter = ~obj.useWiener2Filter;
+                    obj.renderMontage(true);
+                case 'd'
+                    obj.useDoGFilter = ~obj.useDoGFilter;
+                    obj.renderMontage(true);
+                case 'c'
+                    obj.showCenterPoint = ~obj.showCenterPoint;
+                    obj.plot_centerPoint;
             end
 
             
+        end
+
+        function plot_centerPoint(obj)
+
+            if obj.showCenterPoint
+                [m,n,~,~] = size(obj.ImgA);
+                m = m /2;
+                n = n /2;
+                for i = 1:length(obj.ImageHandles)
+                    ax = obj.ImageHandles{i}.Parent;
+                    line(m,n,Marker = "+",Color = "k",Tag = "CenterPoint",Parent = ax,LineWidth = 2);
+                end
+            else
+                h = findobj(obj.FigHandle,"Tag","CenterPoint");
+                delete(h);
+            end
         end
 
         function p = get.totalPages(obj)
@@ -273,29 +313,55 @@ classdef histologyLabeller < handle
     end
 
     methods (Access = private)
-        function imgOut = applyFilter(obj, imgIn)
+        function img = applyFilter(obj, img)            
             if obj.useGaussianFilter
-                imgOut = imgaussfilt(imgIn, 1);
-            elseif obj.useMedianFilter
-                imgOut = medfilt2(imgIn, [3 3]);
-            else
-                imgOut = imgIn;
+                img = imgaussfilt(img, 1);
+            end
+            
+            if obj.useMedianFilter
+                img = medfilt2(img, [3 3]);
+            end
+
+            if obj.useNlmFilter
+                img = imnlmfilt(img,SearchWindowSize=9,ComparisonWindowSize=3);
+            end    
+            
+            if obj.useWiener2Filter
+                img = wiener2(img,[3 3]);
+            end    
+            
+            if obj.useDoGFilter
+                sigma1 = 1;
+                sigma2 = 5;
+                r1 = ceil(3*sigma1);
+                r2 = ceil(3*sigma2);
+                r  = max(r1,r2);
+                w  = 2*r + 1;            % common kernel size
+
+                h1 = fspecial('gaussian', w, sigma1);
+                h2 = fspecial('gaussian', w, sigma2);
+                h  = h1 - h2;
+                img = imfilter(img, h, 'replicate');
             end
         end
 
         function clickCallback(obj, src, evt)
             idx = src.UserData;
-            idx = idx + obj.currentStartIdx - 1;
+            cidx = idx + obj.currentStartIdx - 1;
             switch evt.Button
                 case 1
-                    obj.subimageLabel(idx) = obj.activeID;
+                    obj.subimageLabel(cidx) = obj.activeID;
                 case 3
-                    obj.subimageLabel(idx) = 0;
+                    obj.subimageLabel(cidx) = 0;
             end
+            labelStr = sprintf('%d [%d]', cidx, obj.subimageLabel(cidx));
+            labelColor = obj.getLabelColor(obj.subimageLabel(cidx));
+
+            obj.ImageTextHandles{idx}.String = labelStr;
+            obj.ImageTextHandles{idx}.Color = labelColor;
 
 
-            obj.renderMontage(true);
-            fprintf('subimage %d ID set to %d\n', idx, obj.subimageLabel(idx));
+            fprintf('subimage %d ID set to %d\n', cidx, obj.subimageLabel(cidx));
         end
 
         function color = getLabelColor(~, label)
