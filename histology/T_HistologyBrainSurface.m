@@ -1,16 +1,20 @@
 %% ECM ANALYSIS
-root = 'C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/IMAGES/';
+% root = 'C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/IMAGES/';
+root = 'C:/Users/dstolz/My Drive/PROJECTS/GM6001/HISTOLOGY';
 
 
-d = dir(fullfile(root,'**\*PNN25A*S2*WFA-PV_Z3*proj.tif')); 
+d = dir(fullfile(root,'**\*PNN25A*WFA-PV_Z3*proj.tif')); 
+% d = dir(fullfile(root,'**\*PNN25A*S2*WFA-PV_Z3*proj.tif')); 
 % d = dir(fullfile(root,'**\*dilution*proj.tif')); 
 
 
 fileSuffix = "_ECManalysis";
 
+% surfaceWindow = [-2000 4000];
+surfaceWindow = [-1000 1000];
 
-
-skipExisting = false;
+% skipExisting = 0 : don't skip; 1 : skip w/ prompt; 2 : skip silently
+skipExisting = 2; 
 
 
 
@@ -28,13 +32,18 @@ while i <= length(ffn)
     ffnAnalysis = fullfile(pth,fn + fileSuffix + ".mat");
     ffnAnalysisPng = fullfile(pth,fn + fileSuffix + ".png");
 
-    if skipExisting && isfile(ffnAnalysis)
-        use_fig('histology');
-        imshow(ffnAnalysisPng);
-        title('EXISTING ANALYSIS',Color = "r",FontWeight = "bold",FontSize = 20)
-        r = input('Data already exists. Press any key to reanalyze or Enter to skip: ','s');
+    if skipExisting > 0 && isfile(ffnAnalysis)
+        if skipExisting == 1
+            use_fig('histology');
+            imshow(ffnAnalysisPng);
+            title('EXISTING ANALYSIS',Color = "r",FontWeight = "bold",FontSize = 20)
+            r = input('Data already exists. Press any key to reanalyze or Enter to skip: ','s');
+        else
+            r = [];
+        end
         if isempty(r)
             i = i + 1;
+            fprintf(' skipped\n')
             continue
         end
     end
@@ -109,12 +118,16 @@ end
 
 procID = "PNN25A";
 
-ffnSectionsInfo = "C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/IMAGES/Trackers - Sections.csv";
+ffnSectionsInfo = "C:/Users/dstolz/My Drive/PROJECTS/Trackers - Sections.csv";
 
-root = 'C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/IMAGES';
+% root = 'C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/IMAGES';
+root = 'C:/Users/dstolz/My Drive/PROJECTS/GM6001/HISTOLOGY';
 
-pthOut = "C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/Prelim_Analysis";
+% pthOut = "C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/Prelim_Analysis";
+pthOut = "C:/Users/dstolz/My Drive/PROJECTS/GM6001/Prelim_Analysis";
 
+
+if ~isfolder(pthOut), mkdir(pthOut); end
 
 S = readtable(ffnSectionsInfo,TextType="string",NumHeaderLines=1);
 
@@ -138,7 +151,8 @@ for k = 1:length(subjects)
     % M = cat(3,data(:).M);
 
     use_fig;
-    tl = tiledlayout('vertical');
+    tl = tiledlayout('flow');
+    tl.TileIndexing = 'columnmajor';
     tl.Padding = "tight";
     tl.TileSpacing = "tight";
     for i = 1:length(data)
@@ -157,12 +171,12 @@ for k = 1:length(subjects)
 
         axis image
         set(gca,'ydir','normal')
-        xline(0,'-w')
+        % xline(0,'-w')
         titlef("%s %d%c-%c Axial #%d",s.SubjectID,s.Slide_,s.SliceID,s.Hemisphere,s.AtlasPlate_);
 
     end
     title(tl,subjects(k));
-    colorcet('L8')
+    colorcet('L5')
 
     ax = findobj(gcf,'type','axes');
     set(ax,'clim',[0 40])
