@@ -1,4 +1,4 @@
-function percent = parfor_progress(N)
+function percent = parfor_progress(N,note)
 %PARFOR_PROGRESS Progress monitor (progress bar) that works with parfor.
 %   PARFOR_PROGRESS works by creating a file called parfor_progress.txt in
 %   your working directory, and then keeping track of the parfor loop's
@@ -32,10 +32,12 @@ function percent = parfor_progress(N)
 %   See also PARFOR.
 % By Jeremy Scheff - jdscheff@gmail.com - http://www.jeremyscheff.com/
 
-narginchk(0, 1);
+narginchk(0, 2);
 if nargin < 1
     N = -1;
 end
+
+
 percent = 0;
 w = 50; % Width of progress bar
 if N > 0
@@ -46,6 +48,10 @@ if N > 0
     fprintf(f, '%d\n', N); % Save N at the top of progress.txt
     fclose(f);
     
+    if nargin == 2
+        fprintf('%s\t',note)
+    end
+
     if nargout == 0
         disp(['  0%[>', repmat(' ', 1, w), ']']);
     end
@@ -54,7 +60,8 @@ elseif N == 0
     percent = 100;
     
     if nargout == 0
-        disp([repmat(char(8), 1, (w+9)), newline, '100%[', repmat('=', 1, w+1), ']']);
+        % disp([repmat(char(8), 1, (w+9)), newline, '100%[', repmat('=', 1, w+1), ']']);
+        disp([repmat(char(8), 1, (w+8)), '100%[', repmat('=', 1, w+1), ']']);
     end
 else
     if ~exist('parfor_progress.txt', 'file')
@@ -72,6 +79,9 @@ else
     
     if nargout == 0
         perc = sprintf('%3.0f%%', percent); % 4 characters wide, percentage
-        disp([repmat(char(8), 1, (w+9)), newline, perc, '[', repmat('=', 1, round(percent*w/100)), '>', repmat(' ', 1, w - round(percent*w/100)), ']']);
+        % disp([repmat(char(8), 1, (w+9)), newline, perc, '[', repmat('=', 1, round(percent*w/100)), '>', repmat(' ', 1, w - round(percent*w/100)), ']']);
+        disp([repmat(char(8), 1, (w+8)), perc, '[', repmat('=', 1, round(percent*w/100)), '>', repmat(' ', 1, w - round(percent*w/100)), ']']);
+        
     end
 end
+if nargout == 0, clear percent; end
