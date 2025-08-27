@@ -276,7 +276,7 @@ classdef histologyLabeller < handle
                     obj.plot_centerPoint;
             end
 
-            
+
         end
 
         function plot_centerPoint(obj)
@@ -313,23 +313,23 @@ classdef histologyLabeller < handle
     end
 
     methods (Access = private)
-        function img = applyFilter(obj, img)            
+        function img = applyFilter(obj, img)
             if obj.useGaussianFilter
                 img = imgaussfilt(img, 1);
             end
-            
+
             if obj.useMedianFilter
                 img = medfilt2(img, [3 3]);
             end
 
             if obj.useNlmFilter
                 img = imnlmfilt(img,SearchWindowSize=9,ComparisonWindowSize=3);
-            end    
-            
+            end
+
             if obj.useWiener2Filter
                 img = wiener2(img,[3 3]);
-            end    
-            
+            end
+
             if obj.useDoGFilter
                 sigma1 = 1;
                 sigma2 = 5;
@@ -375,14 +375,98 @@ classdef histologyLabeller < handle
     end
 
     methods (Static)
-        function subImages = computesubImages(Img,XY,halfWidth,halfHeight)
+        function [subImages, rects] = computesubImages(Img, XY, halfWidth, halfHeight, options)
+            % COMPUTESUBIMAGES Extract fixed-size sub-images centered at XY.
+            %   [subImages, rects] = computesubImages(Img, XY, halfWidth, halfHeight, options)
+            %   - Img: grayscale or RGB image.
+            %   - XY: [N x 2] centers as [x y] in pixel coordinates.
+            %   - halfWidth, halfHeight: half sizes (pixels). Output size is
+            %     (2*halfHeight+1)-by-(2*halfWidth+1).
+            %   - options.ignoreOutOfBounds (default = true): if true, drop any crop
+            %     that would extend beyond image edges. If false, crops are zero-padded
+            %     to the requested size while keeping the specified centers.
+
+            arguments
+                Img
+                XY (:,2) double
+                halfWidth (1,1) double {mustBeNonnegative,mustBeInteger}
+                halfHeight (1,1) double {mustBeNonnegative,mustBeInteger}
+                options.ignoreOutOfBounds (1,1) logical = true
+            end
+
             nPoints = size(XY,1);
             x = XY(:,1);
             y = XY(:,2);
-            rects = [x-halfWidth, y-halfHeight, repmat(halfWidth*2,nPoints,1), repmat(halfHeight*2,nPoints,1)];
-            rects = num2cell(rects,2);
-            crops = cellfun(@(r) imcrop(Img, r), rects, 'uni', 0);
-            subImages = cat(3, crops{:});
+
+            w = 2*halfWidth;
+            h = 2*halfHeight;
+            W = w + 1; % target width  (columns)
+            H = h + 1; % target height (rows)
+
+            rects = [x - halfWidth, y - halfHeight, repmat(w, nPoints, 1), repmat(h, nPoints, 1)];
+
+            if options.ignoreOutOfBounds
+                [rows, cols, ~] = size(Img);
+                xmin = rects(:,1);
+                ymin = rects(:,2);
+                xmax = xmin + rects(:,3);
+                ymax = ymin + rects(:,4);
+                inside = xmin >= 0.5 & ymin >= 0.5 & xmax <= cols + 0.5 & ymax <= rows + 0.5;
+                rects = rects(inside,:);
+            end
+
+            if isempty(rects)
+                subImages = [];
+                return
+            end
+
+            isRGB = size(Img,3) == 3;
+
+            if options.ignoreOutOfBounds
+                if isRGB
+                    subImages = zeros(H, W, 3, size(rects,1), 'like', Img);
+                else
+                    subImages = zeros(H, W, size(rects,1), 'like', Img);
+                end
+
+                for i = 1:size(rects,1)
+                    c = imcrop(Img, rects(i,:)); % already guaranteed in-bounds -> exact size
+                    if isRGB
+                        subImages(:,:,:,i) = c;
+                    else
+                        subImages(:,:,i) = c;
+                    end
+                end
+
+            else
+                % Pad the image so all out-of-bounds crops become valid and keep centers.
+                % Pad by halfHeight/halfWidth on all sides with zeros of the same class.
+                padSz = [halfHeight, halfWidth];
+                padded = padarray(Img, padSz, 0, 'both');
+
+                % Adjust rectangles for padded image coordinates:
+                % original [x - hw, y - hh, w, h] -> add [hw, hh] to top-left.
+                rectsPadded = rects;
+                rectsPadded(:,1) = rectsPadded(:,1) + halfWidth;  % x-min shift
+                rectsPadded(:,2) = rectsPadded(:,2) + halfHeight; % y-min shift
+
+                if isRGB
+                    subImages = zeros(H, W, 3, size(rects,1), 'like', Img);
+                else
+                    subImages = zeros(H, W, size(rects,1), 'like', Img);
+                end
+
+                for i = 1:size(rectsPadded,1)
+                    c = imcrop(padded, rectsPadded(i,:)); % always returns HxW (with zero padding if needed)
+                    if isRGB
+                        subImages(:,:,:,i) = c;
+                    else
+                        subImages(:,:,i) = c;
+                    end
+                end
+            end
+
         end
-    end
-end
+
+    end % methods (Static)
+end % classdef
