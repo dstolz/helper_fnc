@@ -56,9 +56,10 @@ if N > 0
         disp(['  0%[>', repmat(' ', 1, w), ']']);
     end
 elseif N == 0
+    warning('off','MATLAB:DELETE:Permission')
     delete('parfor_progress.txt');
     percent = 100;
-    
+    warning('on','MATLAB:DELETE:Permission')
     if nargout == 0
         % disp([repmat(char(8), 1, (w+9)), newline, '100%[', repmat('=', 1, w+1), ']']);
         disp([repmat(char(8), 1, (w+8)), '100%[', repmat('=', 1, w+1), ']']);
@@ -78,9 +79,10 @@ else
     percent = (length(progress)-1)/progress(1)*100;
     
     if nargout == 0
+        p = round(percent*w/100);
         perc = sprintf('%3.0f%%', percent); % 4 characters wide, percentage
         % disp([repmat(char(8), 1, (w+9)), newline, perc, '[', repmat('=', 1, round(percent*w/100)), '>', repmat(' ', 1, w - round(percent*w/100)), ']']);
-        disp([repmat(char(8), 1, (w+8)), perc, '[', repmat('=', 1, round(percent*w/100)), '>', repmat(' ', 1, w - round(percent*w/100)), ']']);
+        disp([repmat(char(8), 1, (w+8)), perc, '[', repmat('=', 1, p), '>', repmat(' ', 1, w - p), ']']);
         
     end
 end
