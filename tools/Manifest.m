@@ -12,15 +12,33 @@ classdef Manifest < handle
     %   T = m.toTable(FlattenParams=true);
     %
     % Search and access:
-    %   m2 = m.search(Contains="bandpass");
+    %   % by substring (case-insensitive)
+    %   m2 = m.search(Text="bandpass");
+    %   % startsWith
+    %   m2 = m.search(Text="band", Match="starts");
+    %   % endsWith
+    %   m2 = m.search(Text="pass", Match="ends");
+    %   % exact, case-sensitive
+    %   m2 = m.search(Text="Bandpass", Match="exact", IgnoreCase=false);
+    %   % regex
+    %   m2 = m.search(Text="^band.*", Match="regex");
+    %   % restrict fields
+    %   m2 = m.search(Text="note", Fields=["notes"]);
+    %   % time window and parameter filter
+    %   t0 = datetime(2025,10,14); t1 = datetime(2025,10,15);
+    %   m2 = m.search(StartTime=t0, EndTime=t1, ParamName="lowHz", ParamValue=300);
     %   n  = m.count;
-    %   e  = m.latest;
+    %   e  = m.latest; % struct of the most recent entry
     %
     % Notes
     %   parameterValues can be any scalar struct. Use FlattenParams to expand.
-    
-    properties (Access = private)
-        items struct = struct('type', {}, 'description', {}, 'timestamp', {}, 'notes', {}, 'parameterValues', {})
+
+    properties
+        type string = string.empty(0,1)
+        description string = string.empty(0,1)
+        timestamp datetime = datetime.empty(0,1)
+        notes string = string.empty(0,1)
+        parameterValues cell = cell(0,1)   % cell array of scalar structs (heterogeneous allowed)
     end
 
     methods
@@ -47,17 +65,11 @@ classdef Manifest < handle
                 notes (1,1) string = ""
             end
 
-            e = struct('type', type, ...
-                       'description', description, ...
-                       'timestamp', datetime('now','TimeZone','local'), ...
-                       'notes', notes, ...
-                       'parameterValues', parameterValues);
-
-            if isempty(self.items)
-                self.items = e;
-            else
-                self.items(end+1) = e; 
-            end
+            self.type(end+1,1) = type;
+            self.description(end+1,1) = description;
+            self.timestamp(end+1,1) = datetime('now');
+            self.notes(end+1,1) = notes;
+            self.parameterValues{end+1,1} = parameterValues; 
         end
 
         function T = toTable(self, opts)
@@ -72,21 +84,23 @@ classdef Manifest < handle
                 opts.FlattenParams (1,1) logical = false
             end
 
-            if isempty(self.items)
+            if isempty(self.type)
                 T = table(string.empty(0,1), string.empty(0,1), datetime.empty(0,1), string.empty(0,1), cell.empty(0,1), ...
                           'VariableNames', {'type','description','timestamp','notes','parameterValues'});
                 return
             end
 
-            T = struct2table(self.items, 'AsArray', true);
+            T = table(self.type(:), self.description(:), self.timestamp(:), self.notes(:), ...
+                      self.parameterValues(:), 'VariableNames', ...
+                      {'type','description','timestamp','notes','parameterValues'});
 
             if opts.FlattenParams
-                % Build columns for each parameter field
-                pv = arrayfun(@(x) x.parameterValues, self.items, 'UniformOutput', false);
+                pv = self.parameterValues(:);
                 allFields = strings(0,1);
                 for k = 1:numel(pv)
-                    if ~isempty(pv{k})
-                        allFields = [allFields; string(fieldnames(pv{k}))]; %#ok<AGROW>
+                    s = pv{k};
+                    if ~isempty(s)
+                        allFields = [allFields; string(fieldnames(s))]; %#ok<AGROW>
                     end
                 end
                 allFields = unique(allFields);
@@ -96,7 +110,7 @@ classdef Manifest < handle
                     vals = cell(height(T),1);
                     for r = 1:height(T)
                         s = pv{r};
-                        if isfield(s, fname)
+                        if ~isempty(s) && isfield(s, fname)
                             vals{r} = s.(fname);
                         else
                             vals{r} = [];
@@ -123,7 +137,7 @@ classdef Manifest < handle
             end
 
             T = toTable(self, FlattenParams=opts.FlattenParams);
-            if isfinite(opts.MaxRows)
+            if isfinite(opts.MaxRows) && height(T) > 0
                 T = T(1:min(opts.MaxRows, height(T)), :);
             end
             disp(T)
@@ -136,15 +150,32 @@ classdef Manifest < handle
             % Return a new Manifest filtered by criteria.
             % Name-Value opts:
             %  Type (string) — exact match on type
-            %  Contains (string) — substring search in type/description/notes (case-insensitive)
+            %  Text (string) — text to match in fields
+            %  Match (string) — one of: "contains" | "starts" | "ends" | "exact" | "regex"
+            %  Fields (string array) — any of: "type","description","notes". Default all.
+            %  IgnoreCase (logical) — case-insensitive match for Text. Default true.
+            %  Contains (string) — legacy alias for Text using 'contains'
             %  StartTime (datetime) — include entries at or after this time
             %  EndTime (datetime) — include entries at or before this time
             %  ParamName (string) — parameter field name to test
             %  ParamValue — value to match against ParamName (isequal)
+            %
+            % Examples
+            %   m.search(Text="bandpass")
+            %   m.search(Text="band", Match="starts")
+            %   m.search(Text="pass$", Match="regex")
+            %   m.search(Text="Band", IgnoreCase=false)
+            %   m.search(Text="note", Fields=["notes"])
+            %   m.search(StartTime=datetime(2025,10,14), EndTime=datetime(2025,10,15))
+            %   m.search(ParamName="lowHz", ParamValue=300)
 
             arguments
                 self (1,1) Manifest
                 opts.Type (1,1) string = string(missing)
+                opts.Text (1,1) string = ""
+                opts.Match (1,1) string = "contains"
+                opts.Fields (1,:) string = ["type","description","notes"]
+                opts.IgnoreCase (1,1) logical = true
                 opts.Contains (1,1) string = ""
                 opts.StartTime (1,1) datetime = NaT
                 opts.EndTime   (1,1) datetime = NaT
@@ -152,41 +183,81 @@ classdef Manifest < handle
                 opts.ParamValue = []
             end
 
-            if isempty(self.items)
+            % normalize match mode
+            validModes = ["contains","starts","ends","exact","regex"];
+            if ~any(opts.Match == validModes)
+                error('Manifest:search','Invalid Match mode.');
+            end
+
+            n = numel(self.type);
+            if n == 0
                 M = Manifest();
                 return
             end
 
-            idx = true(1, numel(self.items));
+            % legacy alias
+            text = opts.Text;
+            mode = opts.Match;
+            if strlength(text)==0 && strlength(opts.Contains)>0
+                text = opts.Contains;
+                mode = "contains";
+            end
 
+            idx = true(n,1);
+
+            % exact Type filter
             if ~ismissing(opts.Type)
-                idx = idx & arrayfun(@(e) e.type == opts.Type, self.items);
+                idx = idx & (self.type == opts.Type);
             end
 
-            if strlength(opts.Contains) > 0
-                pat = lower(opts.Contains);
-                idx = idx & arrayfun(@(e) contains(lower(strjoin([e.type, e.description, e.notes]," ")), pat), self.items);
-            end
-
+            % time window
             if ~isnat(opts.StartTime)
-                idx = idx & arrayfun(@(e) e.timestamp >= opts.StartTime, self.items);
+                idx = idx & (self.timestamp >= opts.StartTime);
             end
-
             if ~isnat(opts.EndTime)
-                idx = idx & arrayfun(@(e) e.timestamp <= opts.EndTime, self.items);
+                idx = idx & (self.timestamp <= opts.EndTime);
             end
 
+            % parameter presence/value
             if strlength(opts.ParamName) > 0
                 p = char(opts.ParamName);
                 if ~isempty(opts.ParamValue)
-                    idx = idx & arrayfun(@(e) isfield(e.parameterValues, p) && isequal(e.parameterValues.(p), opts.ParamValue), self.items);
+                    idx = idx & cellfun(@(s) ~isempty(s) && isfield(s, p) && isequal(s.(p), opts.ParamValue), self.parameterValues);
                 else
-                    idx = idx & arrayfun(@(e) isfield(e.parameterValues, p), self.items);
+                    idx = idx & cellfun(@(s) ~isempty(s) && isfield(s, p), self.parameterValues);
                 end
             end
 
+            % text matching across selected fields
+            if strlength(text) > 0
+                fields = opts.Fields(ismember(opts.Fields, ["type","description","notes"]));
+                if isempty(fields)
+                    fields = ["type","description","notes"];
+                end
+                fmatch = false(n,1);
+                for k = 1:n
+                    hit = false;
+                    for f = fields
+                        switch f
+                            case "type",        val = self.type(k);
+                            case "description", val = self.description(k);
+                            case "notes",       val = self.notes(k);
+                        end
+                        if Manifest.matchText(val, text, mode, opts.IgnoreCase)
+                            hit = true; break
+                        end
+                    end
+                    fmatch(k) = hit;
+                end
+                idx = idx & fmatch;
+            end
+
             M = Manifest();
-            M.items = self.items(idx);
+            M.type = self.type(idx);
+            M.description = self.description(idx);
+            M.timestamp = self.timestamp(idx);
+            M.notes = self.notes(idx);
+            M.parameterValues = self.parameterValues(idx);
         end
 
         function n = count(self)
@@ -198,22 +269,84 @@ classdef Manifest < handle
                 self (1,1) Manifest
             end
 
-            n = numel(self.items);
+            n = numel(self.type);
         end
 
         function e = latest(self)
             % e = latest(self)
             %
-            % Return last entry struct or empty if none.
+            % Return the most recent entry as a struct or empty if none.
 
             arguments
                 self (1,1) Manifest
             end
 
-            if isempty(self.items)
+            if isempty(self.type)
                 e = struct([]);
-            else
-                e = self.items(end);
+                return
+            end
+            [~, idx] = max(self.timestamp);
+            e = struct('type', self.type(idx), ...
+                       'description', self.description(idx), ...
+                       'timestamp', self.timestamp(idx), ...
+                       'notes', self.notes(idx), ...
+                       'parameterValues', self.parameterValues{idx});
+        end
+
+        function tf = isempty(self)
+            % tf = isempty(self)
+            %
+            % True when the manifest has zero entries.
+            arguments
+                self (1,1) Manifest
+            end
+            tf = isempty(self.type);
+        end
+
+        function disp(self)
+            % disp(self)
+            %
+            % Custom display: prints a brief summary and table.
+            arguments
+                self (1,1) Manifest
+            end
+            n = numel(self.type);
+            fprintf('Manifest: %d entries\n', n);
+            self.show;
+        end
+    end
+
+    methods (Static, Access = private)
+        function tf = matchText(str, pat, mode, ignoreCase)
+            % tf = matchText(str, pat, mode, ignoreCase)
+            arguments
+                str (1,1) string
+                pat (1,1) string
+                mode (1,1) string
+                ignoreCase (1,1) logical
+            end
+
+            switch mode
+                case "regex"
+                    if ignoreCase
+                        tf = ~isempty(regexp(str, pat, 'once', 'ignorecase'));
+                    else
+                        tf = ~isempty(regexp(str, pat, 'once'));
+                    end
+                case "contains"
+                    tf = contains(str, pat, 'IgnoreCase', ignoreCase);
+                case "starts"
+                    tf = startsWith(str, pat, 'IgnoreCase', ignoreCase);
+                case "ends"
+                    tf = endsWith(str, pat, 'IgnoreCase', ignoreCase);
+                case "exact"
+                    if ignoreCase
+                        tf = strcmpi(str, pat);
+                    else
+                        tf = strcmp(str, pat);
+                    end
+                otherwise
+                    tf = false;
             end
         end
     end
