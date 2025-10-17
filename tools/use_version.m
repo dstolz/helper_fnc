@@ -1,27 +1,28 @@
-function use_version(repoMainDir, tag, options)
-% USE_VERSION Switch MATLAB path to a tagged release inside repoMainDir.
+function use_version(rootDir, tag, options)
+% USE_VERSION Switch MATLAB path to a a version within rootDir.
 % If called with no inputs, a folder chooser opens (uigetdir), defaulting
-% to the directory that contains use_version.m. If TAG is omitted/empty,
-% a selection dialog (listdlg) lets you pick a release matching
-% options.repoNameRoot under repoMainDir. Cancelling any dialog leaves the
+% to the hardcoded directory (or cd as fallback). If TAG is omitted/empty,
+% a selection dialog (listdlg) lets you pick a version matching
+% the repoNameRoot option under rootDir. Cancelling any dialog leaves the
 % path unchanged. Hidden dot-folders (e.g., .git, .vscode) are excluded.
 
 arguments
-    repoMainDir (1,:) char = ''
+    rootDir (1,:) char = ''
     tag         (1,:) char = ''
     options.repoNameRoot (1,:) char = 'epsych2-'
     options.useGUI      (1,1) logical = false
 end
 
 % If no inputs, prompt for base folder (default to this file's directory)
-if nargin == 0 || isempty(repoMainDir)
-    startDir = fileparts(mfilename('fullpath'));
+if nargin == 0 || isempty(rootDir)
+    startDir = "c:\src\versions";
+    if ~isfolder(startDir), startDir = cd; end
     p = uigetdir(startDir, 'Select repository main directory');
     if isequal(p,0)
         fprintf('Selection cancelled. No changes made.\n');
         return
     end
-    repoMainDir = p;
+    rootDir = p;
 end
 
 % If TAG not provided/empty, force GUI selection
@@ -31,12 +32,12 @@ end
 
 % Resolve target release directory
 if options.useGUI
-    dlist = dir(fullfile(repoMainDir, [options.repoNameRoot '*']));
+    dlist = dir(fullfile(rootDir, [options.repoNameRoot '*']));
     dlist = dlist([dlist.isdir]);
     names = {dlist.name};
     if isempty(names)
         error('use_version:NoReleases', 'No release directories found in %s with prefix %s.', ...
-              repoMainDir, options.repoNameRoot)
+              rootDir, options.repoNameRoot)
     end
     [idx, ok] = listdlg('ListString', names, 'SelectionMode','single', ...
                         'PromptString','Select a release', 'ListSize',[320 420]);
@@ -45,9 +46,9 @@ if options.useGUI
         return
     end
     relName = names{idx};
-    d = fullfile(repoMainDir, relName);
+    d = fullfile(rootDir, relName);
 else
-    d = fullfile(repoMainDir, [options.repoNameRoot tag]);
+    d = fullfile(rootDir, [options.repoNameRoot tag]);
 end
 
 if ~isfolder(d)
