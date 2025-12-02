@@ -39,13 +39,20 @@ classdef Manifest < handle
         timestamp datetime = datetime.empty(0,1)
         notes string = string.empty(0,1)
         parameterValues cell = cell(0,1)   % cell array of scalar structs (heterogeneous allowed)
+        verbosity (1,1) double {mustBeMember(verbosity,0:3)} = 0  % 0: silent, 1..3: increasing detail
     end
 
     methods
-        function self = Manifest()
-            % self = Manifest()
+        function self = Manifest(opts)
+            % self = Manifest(opts)
             %
             % Create an empty manifest.
+            % Name-Value opts:
+            %   Verbosity (double, 0..3) — controls printing on add. [0]
+            arguments
+                opts.Verbosity (1,1) double {mustBeMember(opts.Verbosity,0:3)} = 0
+            end
+            self.verbosity = opts.Verbosity;
         end
 
         function add(self, type, description, parameterValues, notes)
@@ -69,7 +76,10 @@ classdef Manifest < handle
             self.description(end+1,1) = description;
             self.timestamp(end+1,1) = datetime('now');
             self.notes(end+1,1) = notes;
-            self.parameterValues{end+1,1} = parameterValues; 
+            self.parameterValues{end+1,1} = parameterValues;
+
+            % optional display on add, controlled by self.verbosity
+            self.printOnAdd(numel(self.type));
         end
 
         function T = toTable(self, opts)
@@ -316,6 +326,48 @@ classdef Manifest < handle
         end
     end
 
+    methods (Access = private)
+        function printOnAdd(self, idx)
+            % printOnAdd(self, idx)
+            arguments
+                self (1,1) Manifest
+                idx (1,1) double {mustBeInteger, mustBePositive}
+            end
+            v = self.verbosity;
+            if v <= 0
+                return
+            end
+
+            tstr = char(string(self.timestamp(idx),"yyyy-MM-dd HH:mm:ss"));
+            ty   = char(self.type(idx));
+            ds   = char(self.description(idx));
+
+            switch v
+                case 1
+                    fprintf('[Manifest] #%d %s — %s\n', idx, ty, ds);
+                case 2
+                    note = char(self.notes(idx));
+                    if strlength(self.notes(idx))>0
+                        fprintf('[Manifest] #%d [%s] %s — %s | notes: %s\n', idx, tstr, ty, ds, note);
+                    else
+                        fprintf('[Manifest] #%d [%s] %s — %s\n', idx, tstr, ty, ds);
+                    end
+                otherwise % v >= 3
+                    fprintf('[Manifest] #%d [%s] %s — %s\n', idx, tstr, ty, ds);
+                    if strlength(self.notes(idx))>0
+                        fprintf('  notes: %s\n', char(self.notes(idx)));
+                    end
+                    s = self.parameterValues{idx};
+                    if ~isempty(s)
+                        f = fieldnames(s);
+                        for k = 1:numel(f)
+                            fprintf('  param.%s = %s\n', f{k}, Manifest.val2str(s.(f{k})));
+                        end
+                    end
+            end
+        end
+    end
+
     methods (Static, Access = private)
         function tf = matchText(str, pat, mode, ignoreCase)
             % tf = matchText(str, pat, mode, ignoreCase)
@@ -347,6 +399,27 @@ classdef Manifest < handle
                     end
                 otherwise
                     tf = false;
+            end
+        end
+
+        function s = val2str(v)
+            if isstring(v)
+                s = char(strjoin(v, ","));
+            elseif ischar(v)
+                s = v;
+            elseif islogical(v) && isscalar(v)
+                s = char(string(v));
+            elseif isnumeric(v) && isscalar(v)
+                s = num2str(v);
+            elseif isnumeric(v)
+                s = mat2str(v);
+            elseif iscell(v)
+                sz = size(v);
+                s = sprintf('cell[%dx%d]', sz(1), sz(2));
+            elseif isstruct(v)
+                s = 'struct';
+            else
+                s = class(v);
             end
         end
     end
