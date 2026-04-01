@@ -1,7 +1,7 @@
 function percent = parfor_progress(N,note)
 %PARFOR_PROGRESS Progress monitor (progress bar) that works with parfor.
 %   PARFOR_PROGRESS works by creating a file called parfor_progress.txt in
-%   your working directory, and then keeping track of the parfor loop's
+%   a temporary directory, and then keeping track of the parfor loop's
 %   progress within that file. This workaround is necessary because parfor
 %   workers cannot communicate with one another so there is no simple way
 %   to know which iterations have finished and which haven't.
@@ -32,24 +32,29 @@ function percent = parfor_progress(N,note)
 %   See also PARFOR.
 % By Jeremy Scheff - jdscheff@gmail.com - http://www.jeremyscheff.com/
 
-narginchk(0, 2);
-if nargin < 1
-    N = -1;
+arguments
+    N = -1
+    note = []
 end
 
+narginchk(0, 2);
 
 percent = 0;
 w = 50; % Width of progress bar
+
+% Use system temporary directory (Windows 11: e.g., %TEMP%)
+progfile = fullfile(tempdir, 'parfor_progress.txt');
+
 if N > 0
-    f = fopen('parfor_progress.txt', 'w');
-    if f<0
-        error('Do you have write permissions for %s?', pwd);
+    f = fopen(progfile, 'w');
+    if f < 0
+        error('Do you have write permissions for %s?', tempdir);
     end
     fprintf(f, '%d\n', N); % Save N at the top of progress.txt
     fclose(f);
-    
-    if nargin == 2
-        fprintf('%s\t',note)
+
+    if nargin == 2 && ~isempty(note)
+        fprintf('%s\t', note)
     end
 
     if nargout == 0
@@ -57,33 +62,34 @@ if N > 0
     end
 elseif N == 0
     warning('off','MATLAB:DELETE:Permission')
-    delete('parfor_progress.txt');
+    delete(progfile);
     percent = 100;
     warning('on','MATLAB:DELETE:Permission')
     if nargout == 0
-        % disp([repmat(char(8), 1, (w+9)), newline, '100%[', repmat('=', 1, w+1), ']']);
         disp([repmat(char(8), 1, (w+8)), '100%[', repmat('=', 1, w+1), ']']);
     end
 else
-    if ~exist('parfor_progress.txt', 'file')
+    if ~exist(progfile, 'file')
         error('parfor_progress.txt not found. Run PARFOR_PROGRESS(N) before PARFOR_PROGRESS to initialize parfor_progress.txt.');
     end
-    
-    f = fopen('parfor_progress.txt', 'a');
+
+    f = fopen(progfile, 'a');
     fprintf(f, '1\n');
     fclose(f);
-    
-    f = fopen('parfor_progress.txt', 'r');
+
+    f = fopen(progfile, 'r');
     progress = fscanf(f, '%d');
     fclose(f);
+
     percent = (length(progress)-1)/progress(1)*100;
-    
+
     if nargout == 0
         p = round(percent*w/100);
         perc = sprintf('%3.0f%%', percent); % 4 characters wide, percentage
-        % disp([repmat(char(8), 1, (w+9)), newline, perc, '[', repmat('=', 1, round(percent*w/100)), '>', repmat(' ', 1, w - round(percent*w/100)), ']']);
         disp([repmat(char(8), 1, (w+8)), perc, '[', repmat('=', 1, p), '>', repmat(' ', 1, w - p), ']']);
-        
     end
 end
-if nargout == 0, clear percent; end
+
+if nargout == 0
+    clear percent
+end
