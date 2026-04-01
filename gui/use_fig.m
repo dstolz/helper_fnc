@@ -16,7 +16,7 @@ if nargin == 0 || isempty(name), name = 'scratch'; end
 
 fig = findobj('type','figure','-and','name',name);
 if isempty(fig)
-    fig = figure('name',name,'color','w');
+    fig = figure('name',name,'color','w','NumberTitle','off');
 end
 figure(fig);
 clf(fig);
