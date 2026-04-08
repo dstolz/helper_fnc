@@ -1,6 +1,6 @@
 # Slicer Scripts Overview
 
-This folder currently contains three runnable Python scripts for use inside the 3D Slicer Python console.
+This folder currently contains four runnable Python scripts for use inside the 3D Slicer Python console.
 
 ## Common Usage Pattern
 
@@ -57,6 +57,35 @@ Run in Slicer:
 
 ```python
 exec(open(r"c:\src\helper_fnc\slicer\slicer_create_cannula.py", encoding="utf-8").read())
+```
+
+## slicer_measure_point_distance_angle.py
+
+Opens a dialog for selecting two markups or individual control points, then measures the 3D distance between them in RAS space. It also reports the signed angle from vertical (Z/IS) in the Y/AP and X/LR planes, along with the overall angle from vertical.
+
+Requirements before running:
+
+- At least two markup nodes or control points must exist in the scene.
+
+Optional behavior in the dialog:
+
+- Draw a markup line between the selected points
+- Override the generated line node name
+
+Outputs:
+
+- Point 1 and Point 2 world positions in RAS coordinates
+- Point-to-point delta in RAS coordinates
+- 3D distance in mm
+- Signed angle from vertical in the Y/AP plane
+- Signed angle from vertical in the X/LR plane
+- Overall angle from vertical
+- An optional line markup node connecting the two selected points
+
+Run in Slicer:
+
+```python
+exec(open(r"c:\src\helper_fnc\slicer\slicer_measure_point_distance_angle.py", encoding="utf-8").read())
 ```
 
 ## Notes

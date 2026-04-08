@@ -111,9 +111,22 @@ def create_line_node(name, start_point, end_point, color_rgb):
     return line_node
 
 
+def recreate_subject_hierarchy_folder(folder_name):
+    subject_hierarchy_node = slicer.vtkMRMLSubjectHierarchyNode.GetSubjectHierarchyNode(slicer.mrmlScene)
+    existing_item_id = subject_hierarchy_node.GetItemByName(folder_name)
+    if existing_item_id:
+        subject_hierarchy_node.RemoveItem(existing_item_id)
+
+    return subject_hierarchy_node, subject_hierarchy_node.CreateFolderItem(
+        subject_hierarchy_node.GetSceneItemID(),
+        folder_name,
+    )
+
+
 def create_axis_translation_lines(start_point, finish_point, prefix_name):
     intermediate_x = [finish_point[0], start_point[1], start_point[2]]
     intermediate_xy = [finish_point[0], finish_point[1], start_point[2]]
+    folder_name = f"{prefix_name}_Lines"
 
     line_specs = [
         (f"{prefix_name}_X_LR", start_point, intermediate_x, (0.85, 0.20, 0.20)),
@@ -121,12 +134,16 @@ def create_axis_translation_lines(start_point, finish_point, prefix_name):
         (f"{prefix_name}_Z_IS", intermediate_xy, finish_point, (0.20, 0.35, 0.85)),
     ]
 
+    subject_hierarchy_node, folder_item_id = recreate_subject_hierarchy_folder(folder_name)
     created_nodes = []
     for line_name, line_start, line_end, color_rgb in line_specs:
         remove_node_if_exists(line_name)
-        created_nodes.append(create_line_node(line_name, line_start, line_end, color_rgb))
+        line_node = create_line_node(line_name, line_start, line_end, color_rgb)
+        line_item_id = subject_hierarchy_node.GetItemByDataNode(line_node)
+        subject_hierarchy_node.SetItemParent(line_item_id, folder_item_id)
+        created_nodes.append(line_node)
 
-    return created_nodes
+    return created_nodes, folder_name
 
 
 def build_default_transform_name(start_info, finish_info):
@@ -216,7 +233,14 @@ def format_point(point_ras):
     return f"[{point_ras[0]:0.3f}, {point_ras[1]:0.3f}, {point_ras[2]:0.3f}]"
 
 
-def show_results_dialog(start_info, finish_info, translation_ras, transform_node=None, line_nodes=None):
+def show_results_dialog(
+    start_info,
+    finish_info,
+    translation_ras,
+    transform_node=None,
+    line_nodes=None,
+    line_folder_name=None,
+):
     dialog = qt.QDialog(slicer.util.mainWindow())
     dialog.setWindowTitle("Node Translation")
     dialog_layout = qt.QVBoxLayout(dialog)
@@ -255,6 +279,10 @@ def show_results_dialog(start_info, finish_info, translation_ras, transform_node
         dialog_layout.addWidget(transform_label)
 
     if line_nodes:
+        if line_folder_name:
+            folder_label = qt.QLabel(f"Created line folder: {line_folder_name}")
+            dialog_layout.addWidget(folder_label)
+
         line_names = ", ".join(node.GetName() for node in line_nodes)
         lines_label = qt.QLabel(f"Created line nodes: {line_names}")
         lines_label.wordWrap = True
@@ -286,9 +314,10 @@ else:
         transform_node = create_translation_transform_node(transform_name, translation_ras)
 
     line_nodes = None
+    line_folder_name = None
     if params["draw_lines"]:
         line_prefix = params["transform_name"] or build_default_transform_name(start_info, finish_info)
-        line_nodes = create_axis_translation_lines(
+        line_nodes, line_folder_name = create_axis_translation_lines(
             start_info["point_world"],
             finish_info["point_world"],
             line_prefix,
@@ -306,10 +335,20 @@ else:
         result_lines.append(f"Created transform node: {transform_node.GetName()}")
 
     if line_nodes:
+        if line_folder_name:
+            result_lines.append(f"Created line folder: {line_folder_name}")
+
         result_lines.append(
             "Created line nodes: " + ", ".join(line_node.GetName() for line_node in line_nodes)
         )
 
     result_text = "\n".join(result_lines)
     print(result_text)
-    show_results_dialog(start_info, finish_info, translation_ras, transform_node, line_nodes)
+    show_results_dialog(
+        start_info,
+        finish_info,
+        translation_ras,
+        transform_node,
+        line_nodes,
+        line_folder_name,
+    )
