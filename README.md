@@ -158,6 +158,7 @@ The [histology/](histology/) folder is the most specialized part of the reposito
 
 | File | Summary |
 | --- | --- |
+| [extract_czi_metadata.m](histology/extract_czi_metadata.m) | Recursively extracts checklist-aligned metadata from `.czi` files into a table, with optional parallel processing and Excel export. |
 | [extract_equal_area_profiles.m](histology/extract_equal_area_profiles.m) | Samples image intensity across trapezoidal regions laid out along a curve and returns profile metrics. |
 | [histologyLabeller.m](histology/histologyLabeller.m) | Interactive montage browser for labeling image crops or paired image sets. |
 | [InteractiveAffineOverlay.m](histology/InteractiveAffineOverlay.m) | Keyboard-driven affine overlay tool for aligning a foreground image onto a background image. |
