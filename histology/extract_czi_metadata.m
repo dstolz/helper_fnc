@@ -1,19 +1,24 @@
-function T = extract_czi_metadata(rootDir, options)
-%EXTRACT_CZI_METADATA Recursively extract checklist-aligned metadata from .czi files.
+function T = extract_czi_metadata(rootPath, options)
+%EXTRACT_CZI_METADATA Extract checklist-aligned metadata from .czi files.
 %
-%   T = extract_czi_metadata(rootDir)
-%   T = extract_czi_metadata(rootDir, Verbose=false)
-%   T = extract_czi_metadata(rootDir, FileNameRegex="WFA")
-%   T = extract_czi_metadata(rootDir, FileNameRegex="^(?!.*DAPI).*WFA.*$")
-%   T = extract_czi_metadata(rootDir, FileNameRegex="WFA", UseParallel=true)
-%   T = extract_czi_metadata(rootDir, Verbose=false, ...
+%   T = extract_czi_metadata(rootPath)
+%   T = extract_czi_metadata(rootPath, Verbose=false)
+%   T = extract_czi_metadata(rootPath, FileNameRegex="WFA")
+%   T = extract_czi_metadata(rootPath, FileNameRegex="^(?!.*DAPI).*WFA.*$")
+%   T = extract_czi_metadata(rootPath, FileNameRegex="WFA", UseParallel=true)
+%   T = extract_czi_metadata(rootPath, Verbose=false, ...
 %       FileNameRegex="^(?!.*DAPI).*WFA.*$", UseParallel=true)
 %
-%   T = extract_czi_metadata(rootDir, OutputXlsx="metadata.xlsx")
-%   T = extract_czi_metadata(rootDir, FileNameRegex="WFA", ...
+%   T = extract_czi_metadata(cziFile)
+%   T = extract_czi_metadata(cziFile, Verbose=false)
+%
+%   T = extract_czi_metadata(rootPath, OutputXlsx="metadata.xlsx")
+%   T = extract_czi_metadata(rootPath, FileNameRegex="WFA", ...
 %       UseParallel=true, OutputXlsx="wfa_metadata.xlsx")
 %
 % Notes
+%   - rootPath may be a folder (recursive .czi discovery) or the full path to
+%     a single .czi file. When a file is given, FileNameRegex is ignored.
 %   - One row per CZI file.
 %   - Optional inputs are provided as name-value arguments.
 %   - Multi-valued fields are stored as cell arrays containing numeric vectors
@@ -34,14 +39,14 @@ function T = extract_czi_metadata(rootDir, options)
 %     is written to that .xlsx file. Multi-valued cells are serialized as text.
 %
     arguments
-        rootDir (1,1) string {mustBeNonemptyText, mustBeFolderPath}
+        rootPath (1,1) string {mustBeNonemptyText, mustBeFolderOrCziFile}
         options.Verbose {mustBeLogicalScalarLike} = true
         options.FileNameRegex (1,1) string {mustBeRegexOrEmpty} = ""
         options.UseParallel {mustBeLogicalScalarLike} = false
         options.OutputXlsx (1,1) string {mustBeXlsxPathOrEmpty} = ""
     end
 
-    rootDir = char(rootDir);
+    rootPath = char(rootPath);
     verbose = logical(options.Verbose);
     fileNameRegex = string(options.FileNameRegex);
     useParallel = logical(options.UseParallel);
@@ -50,16 +55,26 @@ function T = extract_czi_metadata(rootDir, options)
     initializeBioFormats();
 
     logmsg(verbose, '=== extract_czi_metadata ===');
-    logmsg(verbose, 'Root folder: %s', rootDir);
-    if strlength(fileNameRegex) > 0
-        logmsg(verbose, 'File-name regex filter: %s', char(fileNameRegex));
-    end
-    logmsg(verbose, 'Searching for CZI files...');
 
-    files = findCziFiles(rootDir, fileNameRegex);
+    if isfile(rootPath)
+        logmsg(verbose, 'Input file: %s', rootPath);
+        files = {rootPath};
+    else
+        logmsg(verbose, 'Root folder: %s', rootPath);
+        if strlength(fileNameRegex) > 0
+            logmsg(verbose, 'File-name regex filter: %s', char(fileNameRegex));
+        end
+        logmsg(verbose, 'Searching for CZI files...');
+        files = findCziFiles(rootPath, fileNameRegex);
+    end
+
     n = numel(files);
 
     logmsg(verbose, 'Found %d CZI file(s).', n);
+
+    if n == 0
+        warning('extract_czi_metadata:NoFilesFound', 'No .czi files found in: %s', rootPath);
+    end
 
     if useParallel && n <= 1
         logmsg(verbose, ...
@@ -374,7 +389,12 @@ function T = extract_czi_metadata(rootDir, options)
         });
 
     if strlength(outputXlsx) > 0
-        logmsg(verbose, 'Writing xlsx file: %s', char(outputXlsx));
+        if verbose
+            xlsxPath = char(outputXlsx);
+            fprintf('[%s] Writing xlsx file: <a href="matlab:winopen(''%s'')">%s</a>\n', ...
+                char(datetime('now', 'Format', 'HH:mm:ss')), xlsxPath, xlsxPath);
+            drawnow;
+        end
         TforXlsx = makeExcelWritableTable(T);
         writetable(TforXlsx, char(outputXlsx), 'FileType', 'spreadsheet');
     end
@@ -387,11 +407,16 @@ function mustBeNonemptyText(x)
     end
 end
 
-function mustBeFolderPath(x)
-    if ~isfolder(x)
-        error('extract_czi_metadata:BadPath', ...
-            'Directory not found: %s', char(x));
+function mustBeFolderOrCziFile(x)
+    xc = char(x);
+    if isfolder(xc)
+        return;
     end
+    if isfile(xc) && endsWith(xc, '.czi', 'IgnoreCase', true)
+        return;
+    end
+    error('extract_czi_metadata:BadPath', ...
+        'Input must be an existing folder or a .czi file path: %s', xc);
 end
 
 function mustBeRegexOrEmpty(x)
@@ -783,8 +808,8 @@ function R = processOneCziFile(filePath, verbose)
 
         transmissionVals = getRawNumbers(rawMeta, { ...
             '\|Channel\|Transmission(?:\s*#\d+)?$'});
-        transmissionVals(abs(transmissionVals) <= 1.0 + eps) = ...
-            100 * transmissionVals(abs(transmissionVals) <= 1.0 + eps);
+        transmissionVals(abs(transmissionVals) <= 1) = ...
+            100 * transmissionVals(abs(transmissionVals) <= 1);
 
         detectionRangeVals = getRawText(rawMeta, { ...
             'DetectionWavelength\|Ranges(?:\s*#\d+)?$'});
@@ -966,7 +991,7 @@ function R = processOneCziFile(filePath, verbose)
     catch ME
         R.Error = string(ME.message);
         if verbose
-            fprintf(2, '[%s]     ERROR: %s\n', datestr(now, 'HH:MM:SS'), ME.message);
+            fprintf(2, '[%s]     ERROR: %s\n', char(datetime('now', 'Format', 'HH:mm:ss')), ME.message);
             drawnow;
         end
     end
@@ -1058,7 +1083,7 @@ function files = findCziFiles(rootDir, fileNameRegex)
                 files = [files; subFiles]; %#ok<AGROW>
             end
         else
-            if numel(entries(i).name) >= 4 && strcmpi(entries(i).name(end-3:end), '.czi')
+            if endsWith(entries(i).name, '.czi', 'IgnoreCase', true)
                 if strlength(fileNameRegex) == 0 || ...
                         ~isempty(regexpi(entries(i).name, char(fileNameRegex), 'once'))
                     files{end+1,1} = thisPath; %#ok<AGROW>
@@ -1503,6 +1528,6 @@ function logmsg(verbose, fmt, varargin)
     if ~verbose
         return;
     end
-    fprintf('[%s] %s\n', datestr(now, 'HH:MM:SS'), sprintf(fmt, varargin{:}));
+    fprintf('[%s] %s\n', char(datetime('now', 'Format', 'HH:mm:ss')), sprintf(fmt, varargin{:}));
     drawnow;
 end
