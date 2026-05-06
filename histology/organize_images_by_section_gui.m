@@ -118,7 +118,7 @@ function organize_images_by_section_gui(basePath)
             for k = 1:total
                 fname = files(k).name;
                 fprintf(' File %d/%d: %s\n', k, total, fname);
-                info = regexp(fname, '^(?<subj>[^_]+)_(?<section>\d+[A-Za-z]_[RL])_', 'names');
+                info = regexp(fname, '^(?<subj>[^_]+)_[^_]+_(?<section>\d+[A-Za-z]_[RL])_', 'names');
                 if isempty(info)
                     fprintf('  Skipped.\n'); skipped = skipped + 1; continue;
                 end
