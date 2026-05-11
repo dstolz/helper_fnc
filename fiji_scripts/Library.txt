@@ -1,3 +1,5 @@
+// Copy `Library.txt` to `Fiji.app/macros/Library.txt`
+
 // Recursive file listing
 function listFilesRecursivePattern(dir, regex) {
     list   = getFileList(dir);

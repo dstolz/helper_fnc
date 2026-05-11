@@ -60,8 +60,9 @@ function processSLIDEFile(path) {
     print("Opened image: " + origTitle);
     selectWindow(origTitle);
 
-    run("Z Project...", "projection=[Sum Slices]");
-    run("Royal");
+    run("Z Project...", "projection=[Average Intensity]");
+    run("Enhance Contrast", "saturated=0.1 normalize");
+    run("Grays");
 
     projTitle = getTitle();
     print("Z-projected image: " + projTitle);
@@ -115,6 +116,7 @@ function processZ1File(path) {
     origTitle = getTitle();
     print("Opened image: " + origTitle);
     selectWindow(origTitle);
+
 
     run("Enhance Contrast", "saturated=0.35");
     run("Subtract Background...", "rolling=100");
