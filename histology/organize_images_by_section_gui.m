@@ -5,7 +5,7 @@
 %   • Remembers your last base folder selection
 %   • Displays subdirectories in a sortable table with creation date, modification date, and file count
 %   • Allows multi-selection of folders to process
-%   • Automatically creates subject-section subfolders and moves .czi files accordingly
+%   • Automatically creates per-file subfolders and moves .czi files accordingly
 %   • Reports progress and summary in the Command Window
 %
 % Usage:
@@ -118,17 +118,21 @@ function organize_images_by_section_gui(basePath)
             for k = 1:total
                 fname = files(k).name;
                 fprintf(' File %d/%d: %s\n', k, total, fname);
-                info = regexp(fname, '^(?<subj>[^_]+)_[^_]+_(?<section>\d+[A-Za-z]_[RL])_', 'names');
-                if isempty(info)
-                    fprintf('  Skipped.\n'); skipped = skipped + 1; continue;
-                end
-                destFolder = fullfile(pth, [info.subj '_' info.section]);
+                [~, stem] = fileparts(fname);
+                destFolder = fullfile(pth, stem);
                 if ~exist(destFolder, 'dir')
                     mkdir(destFolder);
                     fprintf('  Created folder %s\n', destFolder);
                 end
                 try
-                    movefile(fullfile(pth, fname), fullfile(destFolder, fname));
+                    srcFile = fullfile(pth, fname);
+                    dstFile = fullfile(destFolder, fname);
+                    if exist(dstFile, 'file')
+                        fprintf('  Skipped (destination file already exists).\n');
+                        skipped = skipped + 1;
+                        continue;
+                    end
+                    movefile(srcFile, dstFile);
                     fprintf('  Moved.\n'); moved = moved + 1;
                 catch ME
                     fprintf('  Error: %s\n', ME.message);

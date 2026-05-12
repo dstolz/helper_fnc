@@ -1,20 +1,33 @@
 // Batch-processing Fiji/ImageJ macro for channel-1 line-profile extraction
 //
 // For each recursively discovered TIFF matching the glob pattern, this macro:
+//   - Optionally skips files whose <original_name><values_suffix>.csv already exists.
 //   1. Opens the source TIFF.
 //   2. Duplicates channel 1 into its own image without altering pixel values.
 //   3. Activates the straight line tool with a 600-pixel line width by default.
-//   4. Waits for the user to draw a line ROI.
+//   4. Prompts to draw a line ROI or skip the current file.
 //   5. Adds the line ROI to ROI Manager, selects it, and runs ROI Manager Multi Plot.
 //   6. Saves the plotted profile values as <original_name>_values.csv.
 //   7. Saves the line ROI as <original_name>_roi.roi.
 //   8. Closes all image/plot windows and proceeds to the next TIFF.
 
 // Entry point
-File.setDefaultDirectory("C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/IMAGES");
+lastDirPrefKey = "helper_fnc.lineMeasure.lastParentDir";
+fallbackParentDir = "C:/Users/dstolz/My Drive/PROJECTS/";
+defaultParentDir = call("ij.Prefs.get", lastDirPrefKey, fallbackParentDir);
+File.setDefaultDirectory(defaultParentDir);
 parentDir = getDirectory("Select parent directory to process:");
+
+if (parentDir == "")
+    exit("No parent directory selected.");
+
+call("ij.Prefs.set", lastDirPrefKey, parentDir);
 pattern = getString("Search for files ending with:", "*_proj.tif");
 lineWidth = getNumber("Line tool/profile width in pixels:", 600);
+valuesSuffix = getString("Values file suffix:", "_values");
+skipIfValuesExists = getBoolean("Skip files when the values CSV already exists?\n\n"
+    + "Click Yes to skip files with existing values CSV output.\n"
+    + "Click No to process all files.");
 
 regex = globsToRegex(toLowerCase(pattern));
 fileList = listFilesRecursivePattern(parentDir, regex);
@@ -24,7 +37,8 @@ print("=== Batch Channel-1 Line Profile Extraction ===");
 print("Parent directory: " + parentDir);
 print("Search glob: " + pattern);
 print("Line width: " + lineWidth + " pixels");
-print("Values suffix: _values.csv");
+print("Values suffix: " + valuesSuffix + ".csv");
+print("Skip existing values CSV: " + skipIfValuesExists);
 print("ROI suffix: _roi.roi");
 print("# files found: " + fileList.length);
 print("---------------------------------------------");
@@ -34,7 +48,7 @@ roiManager("reset");
 
 for (i = 0; i < fileList.length; i++) {
     print("[" + (i + 1) + "/" + fileList.length + "] " + fileList[i]);
-    processFile(fileList[i], lineWidth);
+    processFile(fileList[i], lineWidth, valuesSuffix, skipIfValuesExists);
 }
 
 roiManager("reset");
@@ -43,11 +57,16 @@ print("=== Batch line-profile extraction complete ===");
 showMessage("Batch line-profile extraction complete.");
 
 
-function processFile(path, lineWidth) {
+function processFile(path, lineWidth, valuesSuffix, skipIfValuesExists) {
     dir = File.getDirectory(path);
     base = File.getNameWithoutExtension(path);
-    valuesOut = dir + base + "_values.csv";
+    valuesOut = dir + base + valuesSuffix + ".csv";
     roiOut = dir + base + "_roi.roi";
+
+    if (skipIfValuesExists && File.exists(valuesOut)) {
+        print("> Values CSV already exists; skipping: " + valuesOut);
+        return;
+    }
 
     open(path);
     sourceTitle = getTitle();
@@ -67,6 +86,16 @@ function processFile(path, lineWidth) {
     setLineWidth(lineWidth);
     run("Line Width...", "line=" + lineWidth);
     setTool("line");
+
+    processThisFile = getBoolean("Process this file?\n\n"
+        + "Click Yes to draw a straight line ROI.\n"
+        + "Click No to skip this file and continue.");
+    if (!processThisFile) {
+        print("> Skipped by user: " + path);
+        close("*");
+        roiManager("reset");
+        return;
+    }
 
     waitForUser("Draw a straight line ROI on the duplicated channel-1 image.\n"
         + "Line width is set to " + lineWidth + " pixels.\n"
