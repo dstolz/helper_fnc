@@ -13,7 +13,7 @@
 
 // Entry point
 lastDirPrefKey = "helper_fnc.lineMeasure.lastParentDir";
-fallbackParentDir = "C:/Users/dstolz/My Drive/PROJECTS/";
+fallbackParentDir = getInfo("user.home") + "/My Drive/PROJECTS/";
 defaultParentDir = call("ij.Prefs.get", lastDirPrefKey, fallbackParentDir);
 File.setDefaultDirectory(defaultParentDir);
 parentDir = getDirectory("Select parent directory to process:");
@@ -88,6 +88,7 @@ function processFile(path, lineWidth, valuesSuffix, skipIfValuesExists) {
     setTool("line");
 
     processThisFile = getBoolean("Process this file?\n\n"
+        + "File: " + File.getName(path) + "\n\n"
         + "Click Yes to draw a straight line ROI.\n"
         + "Click No to skip this file and continue.");
     if (!processThisFile) {
@@ -115,6 +116,8 @@ function processFile(path, lineWidth, valuesSuffix, skipIfValuesExists) {
     roiType = selectionType();
     if (roiType < 5 || roiType > 7)
         print("> Warning: selected ROI is not a line ROI. selectionType() = " + roiType);
+
+
 
     roiManager("Add");
     roiManager("Select", 0);

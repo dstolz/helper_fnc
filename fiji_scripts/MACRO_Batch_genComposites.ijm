@@ -26,6 +26,7 @@ function processFolder(folder, searchString) {
                     continue;
                 }
                 processSLIDEFile(path);
+                run("Close All");
             }
             else if (indexOf(path, "Z3") != -1) {
                 baseName = extractBaseName(path);
@@ -35,6 +36,7 @@ function processFolder(folder, searchString) {
                     continue;
                 }
                 processZ3File(path);
+                run("Close All");
             } else if (indexOf(path, "Z1") != -1) {
                 baseName = extractBaseName(path);
                 outPath = getOutputPath(path, baseName + "_dapi.png");
@@ -76,6 +78,7 @@ function processSLIDEFile(path) {
     close();
     selectWindow(origTitle);
     close();
+    run("Close All");
 }
 
 function processZ3File(path) {
@@ -86,10 +89,12 @@ function processZ3File(path) {
     run("Bio-Formats Importer", 
         "open=[" + path + "] autoscale color_mode=Colorized view=Hyperstack stack_order=XYCZT");
 
+    origID = getImageID();
     origTitle = getTitle();
     print("Opened image: " + origTitle);
-    selectWindow(origTitle);
 
+    // Generate Z-projection on a duplicate
+    run("Duplicate...", "duplicate");
     run("Z Project...", "projection=[Sum Slices]");
     projTitle = getTitle();
     print("Z-projected image: " + projTitle);
@@ -99,10 +104,23 @@ function processZ3File(path) {
 
     print("Saving to: " + outPath);
     saveAs("Tiff", outPath);
-    close();
     
-    selectWindow(origTitle);
+    // Apply Make Composite to the Z-projected image
+    run("Make Composite");
+    compTitle = getTitle();
+    print("Composite image: " + compTitle);
+
+    outName = baseName + "_composite.png";
+    outPath = getOutputPath(path, outName);
+
+    print("Saving to: " + outPath);
+    saveAs("PNG", outPath);
     close();
+
+    // Close original
+    selectImage(origID);
+    close();
+    run("Close All");
 }
 
 function processZ1File(path) {
@@ -129,6 +147,7 @@ function processZ1File(path) {
     saveAs("PNG", outPath);
 
     close();
+    run("Close All");
 }
 
 function extractBaseName(path) {
