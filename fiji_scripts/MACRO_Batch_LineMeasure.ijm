@@ -14,6 +14,8 @@
 // Entry point
 lastDirPrefKey = "helper_fnc.lineMeasure.lastParentDir";
 fallbackParentDir = getInfo("user.home") + "/My Drive/PROJECTS/";
+if (!File.isDirectory(fallbackParentDir))
+    fallbackParentDir = getInfo("user.home") + "/";
 defaultParentDir = call("ij.Prefs.get", lastDirPrefKey, fallbackParentDir);
 File.setDefaultDirectory(defaultParentDir);
 parentDir = getDirectory("Select parent directory to process:");
