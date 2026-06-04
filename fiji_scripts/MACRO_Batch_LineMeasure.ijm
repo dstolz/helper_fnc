@@ -4,7 +4,7 @@
 //   - Optionally skips files whose <original_name><values_suffix>.csv already exists.
 //   1. Opens the source TIFF.
 //   2. Duplicates channel 1 into its own image without altering pixel values.
-//   3. Activates the straight line tool with a 600-pixel line width by default.
+//   3. Activates the straight line tool with the specified line width (in µm, converted to pixels per image calibration).
 //   4. Prompts to draw a line ROI or skip the current file.
 //   5. Adds the line ROI to ROI Manager, selects it, and runs ROI Manager Multi Plot.
 //   6. Saves the plotted profile values as <original_name>_values.csv.
@@ -25,7 +25,7 @@ if (parentDir == "")
 
 call("ij.Prefs.set", lastDirPrefKey, parentDir);
 pattern = getString("Search for files ending with:", "*_proj.tif");
-lineWidth = getNumber("Line tool/profile width in pixels:", 600);
+lineWidthMicrons = getNumber("Line tool/profile width in µm:", 994);
 valuesSuffix = getString("Values file suffix:", "_values");
 skipIfValuesExists = getBoolean("Skip files when the values CSV already exists?\n\n"
     + "Click Yes to skip files with existing values CSV output.\n"
@@ -38,7 +38,7 @@ call("ij.IJ.log", "");
 print("=== Batch Channel-1 Line Profile Extraction ===");
 print("Parent directory: " + parentDir);
 print("Search glob: " + pattern);
-print("Line width: " + lineWidth + " pixels");
+print("Line width: " + lineWidthMicrons + " µm");
 print("Values suffix: " + valuesSuffix + ".csv");
 print("Skip existing values CSV: " + skipIfValuesExists);
 print("ROI suffix: _roi.roi");
@@ -50,7 +50,7 @@ roiManager("reset");
 
 for (i = 0; i < fileList.length; i++) {
     print("[" + (i + 1) + "/" + fileList.length + "] " + fileList[i]);
-    processFile(fileList[i], lineWidth, valuesSuffix, skipIfValuesExists);
+    processFile(fileList[i], lineWidthMicrons, valuesSuffix, skipIfValuesExists);
 }
 
 roiManager("reset");
@@ -59,7 +59,7 @@ print("=== Batch line-profile extraction complete ===");
 showMessage("Batch line-profile extraction complete.");
 
 
-function processFile(path, lineWidth, valuesSuffix, skipIfValuesExists) {
+function processFile(path, lineWidthMicrons, valuesSuffix, skipIfValuesExists) {
     dir = File.getDirectory(path);
     base = File.getNameWithoutExtension(path);
     valuesOut = dir + base + valuesSuffix + ".csv";
@@ -77,6 +77,16 @@ function processFile(path, lineWidth, valuesSuffix, skipIfValuesExists) {
     if (channelCount > 1)
         Stack.setChannel(1);
 
+    getVoxelSize(voxW, voxH, voxD, voxUnit);
+    voxUnitLow = toLowerCase(voxUnit);
+    if (voxUnitLow == "µm" || voxUnitLow == "um" || voxUnitLow == "micron" || voxUnitLow == "microns") {
+        lineWidthPx = maxOf(1, round(lineWidthMicrons / voxW));
+        print("> Pixel size: " + voxW + " µm/px; line width " + lineWidthMicrons + " µm = " + lineWidthPx + " px");
+    } else {
+        lineWidthPx = round(lineWidthMicrons);
+        print("> Warning: image unit is '" + voxUnit + "', not µm. Using " + lineWidthPx + " px for line width.");
+    }
+
     dupTitle = base + "_C1_for_line_profile";
     duplicateChannelOne(dupTitle, channelCount, sliceCount, frameCount);
     selectWindow(dupTitle);
@@ -85,8 +95,8 @@ function processFile(path, lineWidth, valuesSuffix, skipIfValuesExists) {
 
     // Set the line tool and line width before drawing.
     // The Line Width command is used because it controls the width used for line-profile averaging.
-    setLineWidth(lineWidth);
-    run("Line Width...", "line=" + lineWidth);
+    setLineWidth(lineWidthPx);
+    run("Line Width...", "line=" + lineWidthPx);
     setTool("line");
 
     processThisFile = getBoolean("Process this file?\n\n"
@@ -101,7 +111,7 @@ function processFile(path, lineWidth, valuesSuffix, skipIfValuesExists) {
     }
 
     waitForUser("Draw a straight line ROI on the duplicated channel-1 image.\n"
-        + "Line width is set to " + lineWidth + " pixels.\n"
+        + "Line width is set to " + lineWidthMicrons + " µm (" + lineWidthPx + " px).\n"
         + "Click OK when the line is finished.");
 
     if (selectionType() == -1) {
@@ -112,8 +122,8 @@ function processFile(path, lineWidth, valuesSuffix, skipIfValuesExists) {
     }
 
     // Re-apply the width to the active line ROI before adding it to ROI Manager.
-    setLineWidth(lineWidth);
-    run("Line Width...", "line=" + lineWidth);
+    setLineWidth(lineWidthPx);
+    run("Line Width...", "line=" + lineWidthPx);
 
     roiType = selectionType();
     if (roiType < 5 || roiType > 7)
