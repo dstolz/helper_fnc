@@ -297,12 +297,18 @@ function Ti = read_and_annotate_file(filePath, filename, fileIndex, metadataInfo
 
 Ti = readtable(filePath);
 Ti = normalize_table_strings(Ti);
+Ti = drop_annotation_columns(Ti);
 nRows = height(Ti);
 
 [~, stem] = fileparts(filename);
-stem = regexprep(stem, "_proj_values$", "");
-stem = regexprep(stem, "_values$", "");
 
+roiToken = regexp(stem, "_proj_(\w+)_values$", "tokens", "once");
+roi = string("");
+if ~isempty(roiToken)
+    roi = string(roiToken{1});
+end
+
+stem = regexprep(stem, "(_proj\w*)?_values$", "");
 fileInfo = parse_values_filename(stem, filename);
 
 Ti.SourceFileIndex = repmat(fileIndex, nRows, 1);
@@ -316,10 +322,36 @@ Ti.Stain = repmat(string(fileInfo.Stain), nRows, 1);
 Ti.ZPlane = repmat(string(fileInfo.ZPlane), nRows, 1);
 Ti.DateCode = repmat(string(fileInfo.DateCode), nRows, 1);
 Ti.ImageNumber = repmat(string(fileInfo.ImageNumber), nRows, 1);
+Ti.Protocol = repmat(string(fileInfo.Protocol), nRows, 1);
+Ti.Series = repmat(string(fileInfo.Series), nRows, 1);
+Ti.ROI = repmat(roi, nRows, 1);
 
 if metadataInfo.hasMetadata
     metadataRow = match_metadata_row(metadataInfo.table, metadataInfo.imageStems, stem, filename);
     Ti = append_metadata_columns(Ti, metadataRow, nRows, metadataInfo.imageFilenameColumn);
+end
+
+end
+
+function T = drop_annotation_columns(T)
+%DROP_ANNOTATION_COLUMNS Remove columns that will be replaced by parsed annotations.
+% Handles the case where a CSV already contains these columns and MATLAB has
+% auto-renamed duplicates with _1, _2, ... suffixes (e.g. SubjectID_1).
+
+annotationCols = ["SourceFileIndex", "SourceFilePath", "Filename", ...
+    "SubjectID", "SampleID", "SectionID", "Hemisphere", "Stain", ...
+    "ZPlane", "DateCode", "ImageNumber", "Protocol", "Series", "ROI"];
+
+varNames = string(T.Properties.VariableNames);
+toRemove = false(size(varNames));
+
+for iCol = 1:numel(annotationCols)
+    base = annotationCols(iCol);
+    toRemove = toRemove | (varNames == base) | ~cellfun(@isempty, regexp(varNames, "^" + base + "_\d+$", "once"));
+end
+
+if any(toRemove)
+    T = removevars(T, varNames(toRemove));
 end
 
 end
@@ -404,6 +436,15 @@ fileInfo.ZPlane = parts(end-2);
 fileInfo.DateCode = parts(end-1);
 fileInfo.ImageNumber = parts(end);
 
+sampleInfo = regexp(fileInfo.SampleID, "^(?<Protocol>.*?)\d{6}S(?<Series>\d+)$", "names");
+if ~isempty(sampleInfo)
+    fileInfo.Protocol = string(sampleInfo.Protocol);
+    fileInfo.Series = string(sampleInfo.Series);
+else
+    fileInfo.Protocol = "";
+    fileInfo.Series = "";
+end
+
 end
 
 function stems = normalize_image_stems(names)
@@ -426,7 +467,7 @@ for iName = 1:numel(names)
         baseName = thisName;
     end
 
-    baseName = regexprep(string(baseName), "(_proj)?_values$", "");
+    baseName = regexprep(string(baseName), "(_proj\w*)?_values$", "");
     stems(iName) = baseName;
 end
 

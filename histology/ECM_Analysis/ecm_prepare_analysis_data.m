@@ -7,8 +7,6 @@ function A = ecm_prepare_analysis_data(S, options)
 %
 % Parameters
 %   S: Structured output from combine_values_csv.
-%   options.distanceVar: Variable name for distance values.
-%   options.intensityVar: Variable name for intensity values.
 %   options.fileVar: Variable name for unique file identity.
 %   options.groupVars: Grouping variable names for aggregate summaries.
 %   options.peakRange: [min max] range for peak search in distance units.
@@ -22,13 +20,9 @@ function A = ecm_prepare_analysis_data(S, options)
 
 arguments
     S struct
-    options.distanceVar (1,1) string = ""
-    options.intensityVar (1,1) string = ""
     options.fileVar (1,1) string = ""
-    options.distanceVarCandidates (1,:) string = ["distance_pixel_index", "distance", "Distance", "x"]
-    options.intensityVarCandidates (1,:) string = ["intensity", "MeanIntensity", "Intensity", "y"]
-    options.fileVarCandidates (1,:) string = ["Filename", "SourceFilePath", "ImageFilename", "Image Filename"]
     options.groupVars (1,:) string = ["SubjectID", "Atlas Plate #", "Hemisphere"]
+    options.surfaceThreshold (1,1) double {mustBeNonnegative,mustBeFinite} = 1
     options.peakRange (1,2) double = [0 300]
     options.smoothingMethod (1,1) string = "gaussian"
     options.smoothingWindow (1,1) double {mustBePositive,mustBeFinite} = 50
@@ -45,22 +39,14 @@ T = S.combined;
 
 varNames = string(T.Properties.VariableNames);
 
-distanceVar = resolve_variable_name(options.distanceVar, options.distanceVarCandidates, varNames, "distance");
-intensityVar = resolve_variable_name(options.intensityVar, options.intensityVarCandidates, varNames, "intensity");
-fileVar = resolve_variable_name(options.fileVar, options.fileVarCandidates, varNames, "file");
+distanceVar = "distance_pixel_index";
+intensityVar = "intensity";
+fileVar = "Filename";
 
-requiredVars = [distanceVar, intensityVar, fileVar];
-missingVars = requiredVars(requiredVars == "");
-
-if ~isempty(missingVars)
-    error("ecm_prepare_analysis_data:MissingVariables", ...
-        "Could not resolve required variables. Missing roles: %s", strjoin(missingVars, ", "))
-end
 
 groupVars = options.groupVars;
 groupVars = groupVars(ismember(groupVars, varNames));
 
-missingGroupVars = setdiff(options.groupVars, groupVars);
 
 if isempty(groupVars)
     error("ecm_prepare_analysis_data:NoGroupVars", ...
@@ -72,65 +58,82 @@ pointTables = cell(numel(fileIds), 1);
 peakRows = repmat(struct("Filename", "", "PeakX", NaN, "PeakY", NaN, "NPoints", 0), numel(fileIds), 1);
 
 for iFile = 1:numel(fileIds)
-    thisFile = fileIds(iFile);
-    idxFile = string(T.(fileVar)) == thisFile;
-    Tf = T(idxFile, :);
+    try
+        thisFile = fileIds(iFile);
+        idxFile = string(T.(fileVar)) == thisFile;
+        Tf = T(idxFile, :);
 
-    x = double(Tf.(distanceVar));
-    y = double(Tf.(intensityVar));
+        fprintf('Processing file %d of %d: %s',iFile,numel(fileIds),thisFile)
 
-    valid = isfinite(x) & isfinite(y);
-    x = x(valid);
-    y = y(valid);
+        x = double(Tf.(distanceVar));
+        y = double(Tf.(intensityVar));
 
-    if isempty(x)
-        continue
+        valid = isfinite(x) & isfinite(y);
+        x = x(valid);
+        y = y(valid);
+
+        if isempty(x)
+            continue
+        end
+
+        [x, sortIdx] = sort(x);
+        y = y(sortIdx);
+
+        ySmooth = smoothdata(y, options.smoothingMethod, max(1, round(options.smoothingWindow)));
+
+        switch options.normalizeMode
+            case "zscore"
+                ySmooth = normalize(ySmooth, "zscore");
+            case "minmax"
+                mn = min(ySmooth);
+                mx = max(ySmooth);
+                if mx > mn
+                    ySmooth = (ySmooth - mn) ./ (mx - mn);
+                else
+                    ySmooth = zeros(size(ySmooth));
+                end
+        end
+
+
+        yRange = y(x < min(500,length(x)));
+        ix = find(yRange < options.surfaceThreshold,1,'last');
+        xSurface = x(ix);
+
+
+
+        alignedX = x - xSurface;
+
+        inPeakRange = alignedX >= options.peakRange(1) & alignedX <= options.peakRange(2);
+        if any(inPeakRange)
+            [peakY, iPeak] = max(ySmooth(inPeakRange));
+            peakXVec = alignedX(inPeakRange);
+            peakX = peakXVec(iPeak);
+        else
+            peakX = NaN;
+            peakY = NaN;
+        end
+
+        fileHash = filename_hash(thisFile);
+
+        Tout = Tf(valid, :);
+        Tout = Tout(sortIdx, :);
+        Tout.file_id = repmat(fileHash, height(Tout), 1);
+        Tout.aligned_distance = alignedX;
+        Tout.intensity_raw = y;
+        Tout.intensity_smoothed = ySmooth;
+
+        pointTables{iFile} = Tout;
+
+        peakRows(iFile).Filename = thisFile;
+        peakRows(iFile).PeakX = peakX;
+        peakRows(iFile).PeakY = peakY;
+        peakRows(iFile).NPoints = numel(x);
+
+    catch me
+        fprintf(2,' ... Failed')
     end
 
-    [x, ix] = sort(x);
-    y = y(ix);
-
-    ySmooth = smoothdata(y, options.smoothingMethod, max(1, round(options.smoothingWindow)));
-
-    switch options.normalizeMode
-        case "zscore"
-            ySmooth = normalize(ySmooth, "zscore");
-        case "minmax"
-            mn = min(ySmooth);
-            mx = max(ySmooth);
-            if mx > mn
-                ySmooth = (ySmooth - mn) ./ (mx - mn);
-            else
-                ySmooth = zeros(size(ySmooth));
-            end
-    end
-
-    inPkRange = x >= options.peakRange(1) & x <= options.peakRange(2);
-
-    if any(inPkRange)
-        yRange = ySmooth(inPkRange);
-        xRange = x(inPkRange);
-        [peakY, kRange] = max(yRange);
-        peakX = xRange(kRange);
-    else
-        [peakY, kAll] = max(ySmooth);
-        peakX = x(kAll);
-    end
-
-    alignedX = x - peakX;
-
-    Tout = Tf(valid, :);
-    Tout = Tout(ix, :);
-    Tout.aligned_distance = alignedX;
-    Tout.intensity_raw = y;
-    Tout.intensity_smoothed = ySmooth;
-
-    pointTables{iFile} = Tout;
-
-    peakRows(iFile).Filename = thisFile;
-    peakRows(iFile).PeakX = peakX;
-    peakRows(iFile).PeakY = peakY;
-    peakRows(iFile).NPoints = numel(x);
+    fprintf('\n')
 end
 
 pointTables = pointTables(~cellfun(@isempty, pointTables));
@@ -175,19 +178,20 @@ end
 
 A = struct();
 A.options = options;
-A.resolvedVariables = struct( ...
-    "distanceVar", distanceVar, ...
-    "intensityVar", intensityVar, ...
-    "fileVar", fileVar);
-A.validation = struct( ...
-    "missingGroupVars", missingGroupVars, ...
-    "selectedGroupVars", groupVars, ...
-    "availableVariables", varNames);
 A.groupVars = groupVars;
 A.aligned = alignedTable;
 A.peaks = peakTable;
 A.grouped = groupedTable;
 
+end
+
+function h = filename_hash(str)
+%FILENAME_HASH Return an 8-character lowercase hex hash of a string.
+md = java.security.MessageDigest.getInstance('MD5');
+md.update(unicode2native(char(str), 'UTF-8'));
+bytes = typecast(md.digest(), 'uint8');
+h = lower(reshape(dec2hex(bytes(1:4))', 1, []));
+h = string(h);
 end
 
 function varName = resolve_variable_name(preferred, candidates, available, roleName)
