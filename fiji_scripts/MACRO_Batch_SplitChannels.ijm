@@ -13,8 +13,8 @@ Dialog.addString("Channel 1 suffix:", "_ECM");
 Dialog.addString("Channel 2 suffix:", "_PV");
 Dialog.addCheckbox("Swap channel assignment (Ch2 → suffix1, Ch1 → suffix2)", false);
 Dialog.addMessage("--- Scaling ---");
-Dialog.addCheckbox("Rescale images to target pixel size", false);
-Dialog.addNumber("Source pixel size (µm/px):", 1.0);
+Dialog.addCheckbox("Rescale images to target pixel size", true);
+Dialog.addNumber("Source pixel size (µm/px):", 1.6573); // TO DO: derive this from image metadata instead of user input
 Dialog.addNumber("Target pixel size (µm/px):", 0.645);
 Dialog.show();
 
