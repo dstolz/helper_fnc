@@ -16,6 +16,8 @@ Dialog.addMessage("--- Scaling ---");
 Dialog.addCheckbox("Rescale images to target pixel size", true);
 Dialog.addNumber("Source pixel size (µm/px):", 1.6573); // TO DO: derive this from image metadata instead of user input
 Dialog.addNumber("Target pixel size (µm/px):", 0.645);
+Dialog.addMessage("--- Background subtraction ---");
+Dialog.addCheckbox("Apply background subtraction", false);
 Dialog.show();
 
 searchString = Dialog.getString();
@@ -23,6 +25,7 @@ suffix1     = Dialog.getString();
 suffix2     = Dialog.getString();
 swapCh      = Dialog.getCheckbox();
 doScale     = Dialog.getCheckbox();
+doBGSub     = Dialog.getCheckbox();
 srcPx       = Dialog.getNumber();
 tgtPx       = Dialog.getNumber();
 
@@ -117,8 +120,8 @@ function processFile(path, suffix1, suffix2, doScale, scaleFactor) {
         if (doScale) scaleImage(scaleFactor);
 
 
-        % TO DO: make this user option
-        run("Subtract Background...", "rolling=10 sliding disable");
+        if (doBGSub) run("Subtract Background...", "rolling=10 sliding disable");
+
 
         saveAs("Tiff", out1);
         print("  Saved Ch1: " + out1);
@@ -131,6 +134,10 @@ function processFile(path, suffix1, suffix2, doScale, scaleFactor) {
     if (!File.exists(out2)) {
         selectWindow(c2Title);
         if (doScale) scaleImage(scaleFactor);
+
+        
+        if (doBGSub) run("Subtract Background...", "rolling=10 sliding disable");
+
         saveAs("Tiff", out2);
         print("  Saved Ch2: " + out2);
     } else {
