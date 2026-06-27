@@ -50,48 +50,51 @@ for r = 1:N.ROI
         nexttile
 
         for k = 1:N.SubjectID
-            ind = a.AtlasPlate_ == U.AtlasPlate_(i) ...
-                & a.ROI == U.ROI(r) ...
-                & a.SubjectID == U.SubjectID(k);
 
-            if ~any(ind), continue; end
+            for h = 1:N.Hemisphere
+                ind = a.AtlasPlate_ == U.AtlasPlate_(i) ...
+                    & a.ROI == U.ROI(r) ...
+                    & a.SubjectID == U.SubjectID(k) ...
+                    & a.Hemisphere == U.Hemisphere(h);
 
-            Asub = A.aligned(ind,:);
+                if ~any(ind), continue; end
 
-            fid = Asub.file_id;
-            ufid = unique(fid);
+                Asub = A.aligned(ind,:);
 
-            for j = 1:length(ufid)
-                indf = fid == ufid(j);
+                fid = Asub.file_id;
+                ufid = unique(fid);
 
-                x = Asub.aligned_distance(indf);
-                y = Asub.intensity_raw(indf);
-                % y = Asub.intensity_smoothed(indf);
+                for j = 1:length(ufid)
+                    indf = fid == ufid(j);
 
-                indx = x >= 0 & x <= depthLimit;
+                    x = Asub.aligned_distance(indf);
+                    y = Asub.intensity_raw(indf);
+                    % y = Asub.intensity_smoothed(indf);
 
-                if j == 1
-                    yM = nan(sum(indx),length(ufid));
-                    xM = yM;
+                    indx = x >= 0 & x <= depthLimit;
+
+                    if j == 1
+                        yM = nan(sum(indx),length(ufid));
+                        xM = yM;
+                    end
+                    yM(:,j) = y(indx);
+                    xM(:,j) = x(indx);
+
+                    if plotType == "individual"
+                        idx = find(indf,1);
+                        dnstr = sprintf('%s-%s-%c',Asub.SubjectID(idx),Asub.SectionID(idx),Asub.Hemisphere(idx));
+
+                        line(x,y, ...
+                            Color = cm(k,:), ...
+                            DisplayName = dnstr)
+                    end
                 end
-                yM(:,j) = y(indx);
-                xM(:,j) = x(indx);
 
-                if plotType == "individual"
+                if plotType == "mean"
                     idx = find(indf,1);
-                    dnstr = sprintf('%s-%s-%c',Asub.SubjectID(idx),Asub.SectionID(idx),Asub.Hemisphere(idx));
+                    dnstr = sprintf('%s - %c',Asub.SubjectID(idx),Asub.Hemisphere(idx));
 
-                    line(x,y, ...
-                        Color = cm(k,:), ...
-                        DisplayName = dnstr)
-                end
-            end
 
-            if plotType == "mean"
-                idx = find(indf,1);
-                    dnstr = Asub.SubjectID(idx);
-
-                    
                     y_mean = mean(yM,2).';
                     y_std = std(yM,0,2).';
                     x_ = linspace(0,depthLimit,length(y_mean));
@@ -99,34 +102,38 @@ for r = 1:N.ROI
                     x_p = [x_ fliplr(x_)];
                     y_std_p = [y_mean+y_std fliplr(y_mean-y_std)];
 
-                    patch(x_p,y_std_p,[0 0 0], ...
-                        EdgeColor = 'none', ...
-                        FaceColor = cm(k,:), ...
-                        FaceAlpha = 0.3, ...
-                        HandleVisibility = 'off')
+                    % patch(x_p,y_std_p,[0 0 0], ...
+                    %     EdgeColor = 'none', ...
+                    %     FaceColor = cm(k,:), ...
+                    %     FaceAlpha = 0.3, ...
+                    %     HandleVisibility = 'off')
 
-                    line(x_,y_mean, ...
+                    lh = line(x_,y_mean, ...
                         LineWidth = 2, ...
                         Color = cm(k,:), ...
-                        DisplayName = dnstr)
+                        DisplayName = dnstr);
+                    if h == 2
+                        lh.LineStyle = '--';
+                    end
 
+                end
+            end % h: hemisphere
+
+            if plotType == "individual"
+                xline(0,HandleVisibility="off")
+                xregion([0 depthLimit], ...
+                    FaceColor = [0.9 0.9 0.9], ...
+                    HandleVisibility="off")
             end
-        end
-        
-        if plotType == "individual"
-            xline(0,HandleVisibility="off")
-            xregion([0 depthLimit], ...
-                FaceColor = [0.9 0.9 0.9], ...
-                HandleVisibility="off")
-        end
 
-        titlef('%s -- Atlas Plate #%d',U.ROI(r),U.AtlasPlate_(i))
-        legend
-        grid on
+            titlef('%s -- Atlas Plate #%d',U.ROI(r),U.AtlasPlate_(i))
+            legend
+            grid on
 
-        axis tight
-        box on
-    end
+            axis tight
+            box on
+        end % k: SubjectID
+    end % i: AtlasPlate
 end
 linkaxes(t.Children)
 

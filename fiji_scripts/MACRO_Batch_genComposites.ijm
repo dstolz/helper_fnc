@@ -93,13 +93,20 @@ function processZ3File(path) {
     origTitle = getTitle();
     print("Opened image: " + origTitle);
 
-    // Generate Z-projection on a duplicate
-    run("Duplicate...", "duplicate");
-    run("Z Project...", "projection=[Sum Slices]");
-    projTitle = getTitle();
-    print("Z-projected image: " + projTitle);
+    // select only the second channel (Z3) for projection
+    run("Duplicate...", "title=Middle_Z duplicate channels=1-2 slices=2 frames=1");
 
-    outName = baseName + "_proj.tif";
+    outName = baseName + "_mid.tif";
+
+
+    // Generate Z-projection on a duplicate
+    //run("Duplicate...", "duplicate");
+    //run("Z Project...", "projection=[Sum Slices]");
+    //projTitle = getTitle();
+    //print("Z-projected image: " + projTitle);
+    //
+    //outName = baseName + "_proj.tif";
+    
     outPath = getOutputPath(path, outName);
 
     print("Saving to: " + outPath);
