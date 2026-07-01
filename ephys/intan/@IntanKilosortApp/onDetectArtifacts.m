@@ -44,9 +44,18 @@ try
         logical(obj.ArtEnableCheckBox.Value));
     obj.ArtStatusLabel.Text = sprintf("Analyzed %s (%d file(s)).", ...
         d.Name, numel(summary.files));
+
+    if logical(obj.ArtEnableCheckBox.Value)
+        artHint = "Silencing is enabled; Run Kilosort4 to apply it.";
+    else
+        artHint = "Tick 'Silence artifacts' (Kilosort tab) to apply on the run.";
+    end
+    obj.setStatus(sprintf("Analyzed %s: %.3f%% flagged in %d interval(s).", ...
+        d.Name, summary.pctDuration, summary.nIntervals), artHint);
 catch ME
     if isvalid(dlg); close(dlg); end
     uialert(obj.Fig, ME.message, "Detect failed");
+    obj.setStatus("Artifact detection failed: " + string(ME.message));
 end
 end
 
@@ -105,9 +114,9 @@ lines = {
     sprintf('Intervals     : %d', s.nIntervals)
     sprintf('Worst channel : %d (%.3f%% flagged)', pkCh, pkPct)
     ''
-    sprintf('On .bin write : %s', ternary(enabled, ...
-        'BLANKED (every channel zeroed at flagged samples)', ...
-        'NOT blanked (tick "Blank artifacts in .bin" on the Kilosort tab to enable)'))
+    sprintf('On sort run   : %s', ternary(enabled, ...
+        'SILENCED (flagged samples zeroed via SpikeInterface)', ...
+        'NOT silenced (tick "Silence artifacts" on the Kilosort tab to enable)'))
     };
 t = strjoin(lines, newline);
 end

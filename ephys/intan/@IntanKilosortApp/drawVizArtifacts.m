@@ -1,10 +1,12 @@
 function drawVizArtifacts(obj)
-%drawVizArtifacts  Redraw the manual artifact regions on the Visualize axes.
-%   Clears any previously drawn xregion handles and repaints one shaded region
-%   per period in the current dataset's ManualArtifacts, converted from
-%   recording-relative seconds to the displayed (loaded-window) time axis.
-%   Called at the end of renderViz so the regions survive pan/zoom and the
-%   cla() that happens when the plot mode changes.
+%drawVizArtifacts  Redraw the artifact regions on the Visualize axes.
+%   Clears any previously drawn xregion handles and repaints both:
+%     - automatically detected artifacts (orange) for the loaded window, cached
+%       in VizData.detectedIntervals (window-relative seconds);
+%     - manually marked periods (red) from the current dataset's ManualArtifacts,
+%       converted from recording-relative to the displayed time axis.
+%   Called at the end of renderViz so the regions survive pan/zoom and the cla()
+%   that happens when the plot mode changes.
 
 ax = obj.VizAxes;
 
@@ -15,17 +17,28 @@ for k = 1:numel(old)
 end
 obj.VizArtPatches = gobjects(0, 1);
 
-d = obj.currentVizDataset();
-if isempty(d) || isempty(d.ManualArtifacts); return; end
+h = gobjects(0, 1);
 
-tOff = 0;
-if isfield(obj.VizData, 'tOffset'); tOff = obj.VizData.tOffset; end
-iv = d.ManualArtifacts - tOff;            % -> displayed-axis seconds
-
-h = gobjects(size(iv, 1), 1);
-for k = 1:size(iv, 1)
-    h(k) = xregion(ax, iv(k, 1), iv(k, 2), ...
-        'FaceColor', [0.85 0.2 0.2], 'FaceAlpha', 0.18);
+% Detected artifacts (orange) - already in displayed-window seconds.
+if ~isempty(obj.VizData) && isfield(obj.VizData, 'detectedIntervals')
+    det = obj.VizData.detectedIntervals;
+    for k = 1:size(det, 1)
+        h(end+1, 1) = xregion(ax, det(k, 1), det(k, 2), ...
+            'FaceColor', [0.95 0.6 0.1], 'FaceAlpha', 0.15); %#ok<AGROW>
+    end
 end
+
+% Manual artifacts (red) - recording-relative, shifted onto the displayed axis.
+d = obj.currentVizDataset();
+if ~isempty(d) && ~isempty(d.ManualArtifacts)
+    tOff = 0;
+    if isfield(obj.VizData, 'tOffset'); tOff = obj.VizData.tOffset; end
+    iv = d.ManualArtifacts - tOff;        % -> displayed-axis seconds
+    for k = 1:size(iv, 1)
+        h(end+1, 1) = xregion(ax, iv(k, 1), iv(k, 2), ...
+            'FaceColor', [0.85 0.2 0.2], 'FaceAlpha', 0.18); %#ok<AGROW>
+    end
+end
+
 obj.VizArtPatches = h;
 end

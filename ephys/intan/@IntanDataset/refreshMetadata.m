@@ -1,5 +1,8 @@
 function refreshMetadata(obj)
-%refreshMetadata  Fill header metadata from each *.rhd file (no data read).
+%refreshMetadata  Fill header metadata for the recording (no data read).
+%   For the traditional format this parses every *.rhd header; for the split
+%   formats it parses info.rhd and sizes the recording from the .dat file(s) (see
+%   refreshSplitMetadata / splitLayout). The traditional path below:
 %   ds.refreshMetadata() parses the header of every file in ds.Files via
 %   IntanDataset.parseIntanHeader (header-only; no amplifier matrix is
 %   allocated) and populates Fs, NumChannels, ChannelNames, NativeNames,
@@ -17,6 +20,15 @@ arguments
 end
 
 obj.discoverFiles();  % re-scan in case files changed on disk
+
+% Split formats (info.rhd + flat .dat files): the header carries no data
+% blocks, so amplifier sample counts come from the .dat file size(s) resolved by
+% splitLayout, not from parseIntanHeader's block count.
+if obj.RecordingFormat == "one-file-per-signal" || ...
+        obj.RecordingFormat == "one-file-per-channel"
+    refreshSplitMetadata(obj);
+    return
+end
 
 if obj.NumFiles == 0
     warning('IntanDataset:refreshMetadata:NoFiles', ...
@@ -70,6 +82,48 @@ obj.AcqDate  = datetime(min([pf.datenum]), 'ConvertFrom', 'datenum');
 if ~isempty(obj.Manifest) && isa(obj.Manifest, 'Manifest')
     obj.Manifest.add("metadata", "Parsed Intan headers", ...
         struct('folder', obj.Folder, 'numFiles', obj.NumFiles, ...
+        'fs', obj.Fs, 'numChannels', obj.NumChannels, ...
+        'duration', obj.Duration));
+end
+end
+
+
+% =========================================================================
+function refreshSplitMetadata(obj)
+%refreshSplitMetadata  Fill metadata for a split-format recording.
+%   Parses info.rhd for header fields and derives the amplifier sample count
+%   from the .dat file size(s) (the header has no data blocks). Mirrors the
+%   PerFile summary the traditional path builds, with a single entry standing in
+%   for the whole recording, so downstream code (NumSamples, the GUI tables,
+%   onPlotVisualization) is unchanged.
+L = obj.splitLayout();
+
+obj.Fs           = L.Fs;
+obj.NumChannels  = L.nChan;
+obj.ChannelNames = L.ampCustom;
+obj.NativeNames  = L.ampNative;
+obj.DigInNames   = L.digInNames;
+
+nSamp = L.nSamp;
+obj.PerFile = struct( ...
+    'name',                 "info.rhd", ...
+    'bytesPerBlock',        NaN, ...
+    'numDataBlocks',        NaN, ...
+    'numAmplifierSamples',  nSamp, ...
+    'recordTime',           nSamp / L.Fs, ...
+    'numAmplifierChannels', L.nChan, ...
+    'numBoardDigIn',        numel(L.digInNames), ...
+    'headerBytes',          NaN, ...
+    'datenum',              L.ampDatenum, ...
+    'partialBlock',         false, ...
+    'dataPresent',          nSamp > 0);
+
+obj.Duration = nSamp / L.Fs;
+obj.AcqDate  = datetime(L.ampDatenum, 'ConvertFrom', 'datenum');
+
+if ~isempty(obj.Manifest) && isa(obj.Manifest, 'Manifest')
+    obj.Manifest.add("metadata", "Parsed Intan split-format header", ...
+        struct('folder', obj.Folder, 'format', obj.RecordingFormat, ...
         'fs', obj.Fs, 'numChannels', obj.NumChannels, ...
         'duration', obj.Duration));
 end

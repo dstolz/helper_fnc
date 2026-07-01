@@ -27,16 +27,18 @@ cg.ColumnWidth = {'fit', '1x'};
 
 row = 1;
 lab(cg, "Dataset:", row);
-obj.ArtDatasetDropDown = uidropdown(cg, "Items", {'(scan first)'});
+obj.ArtDatasetDropDown = uidropdown(cg);
+obj.ArtDatasetDropDown.Items = {'(scan first)'};
 obj.ArtDatasetDropDown.Layout.Row = row; obj.ArtDatasetDropDown.Layout.Column = 2;
 
 row = row + 1;
 lab(cg, "Method:", row);
-obj.ArtMethodDropDown = uidropdown(cg, ...
-    "Items", {'Running RMS (per-channel SD)', 'MAD (per-channel SD)', ...
-              'Absolute microvolts', 'Common-mode (mean)'}, ...
-    "ItemsData", {'rms', 'mad', 'microvolts', 'commonmode'}, "Value", 'rms', ...
-    "ValueChangedFcn", @(~,~) obj.onArtifactControlsChanged());
+obj.ArtMethodDropDown = uidropdown(cg);
+obj.ArtMethodDropDown.Items = {'Running RMS (per-channel SD)', 'MAD (per-channel SD)', ...
+              'Absolute microvolts', 'Common-mode (mean)'};
+obj.ArtMethodDropDown.ItemsData = {'rms', 'mad', 'microvolts', 'commonmode'};
+obj.ArtMethodDropDown.Value = 'rms';
+obj.ArtMethodDropDown.ValueChangedFcn = @(~,~) obj.onArtifactControlsChanged();
 obj.ArtMethodDropDown.Layout.Row = row; obj.ArtMethodDropDown.Layout.Column = 2;
 
 row = row + 1;

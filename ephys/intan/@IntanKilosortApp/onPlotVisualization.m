@@ -10,9 +10,10 @@ function onPlotVisualization(obj)
 %   more full-array copies while preprocessing - the source of out-of-memory
 %   errors on long recordings), this:
 %
-%     1. Streams ONE *.rhd file into RAM at a time (the same one-file-in-memory
-%        invariant toBin relies on), so peak usage never scales with the whole
-%        recording length.
+%     1. Streams ONE chunk into RAM at a time (a whole *.rhd file for the
+%        traditional format, or a bounded sample window over the flat .dat for
+%        the split formats - the same one-chunk-in-memory invariant toBin relies
+%        on), so peak usage never scales with the whole recording length.
 %     2. Works in single precision (half the bytes of double).
 %     3. Picks a memory budget for the cached matrix and, when the full-
 %        resolution span would exceed it, peak-decimates on load: each bin keeps
@@ -46,24 +47,29 @@ if isempty(d.PerFile) || ~isfield(d.PerFile, 'numAmplifierSamples') || isnan(d.F
     d.refreshMetadata();
 end
 
-% Resolve which file(s) to read (chronological order preserved).
+% Resolve the streaming plan. For traditional recordings the file dropdown can
+% pick one *.rhd file (or "(all)"); the split formats are a single data set, so
+% the selection is ignored and the whole recording is streamed in bounded
+% sample-window chunks. Either way readChunkUV yields one [m x nChanAll] chunk.
 fileSel = string(obj.VizFileDropDown.Value);
-if fileSel == "(all)" || fileSel == ""
-    fileList = d.Files;
+if d.RecordingFormat == "traditional" && fileSel ~= "(all)" && fileSel ~= ""
+    planFiles = fileSel;
 else
-    fileList = fileSel;
+    planFiles = string.empty(1,0);
 end
-if isempty(fileList)
-    uialert(obj.Fig, "No *.rhd files to read for this dataset.", "Visualize");
+plan = d.streamPlan(Files=planFiles);
+if isempty(plan)
+    uialert(obj.Fig, "No Intan data to read for this dataset.", "Visualize");
     return
 end
 
-% Per-file amplifier sample counts (for the selected files) -> total samples.
-fileSamples = perFileSampleCounts(d, fileList);
-Ntot = sum(fileSamples);
+% Per-chunk amplifier sample counts -> total samples (for cache sizing/decimation).
+chunkSamples = [plan.nSamples];
+chunkSamples(~isfinite(chunkSamples)) = 0;
+Ntot = sum(chunkSamples);
 nCh  = numel(chans);
 if Ntot <= 0
-    uialert(obj.Fig, "Selected file(s) contain no amplifier samples.", "Visualize");
+    uialert(obj.Fig, "Selected data contains no amplifier samples.", "Visualize");
     return
 end
 
@@ -96,34 +102,31 @@ dlg = uiprogressdlg(obj.Fig, "Title", "Loading", ...
 
 try
     FsTrue = d.Fs;
-    nFiles = numel(fileList);
+    nChunks = numel(plan);
 
     % Preallocate the cache at the decimated length (capacity from header
     % counts; trimmed to the actual filled length afterwards). No concatenation.
-    outLen = sum(floor(fileSamples / decim));
+    outLen = sum(floor(chunkSamples / decim));
     outLen = max(outLen, 1);
     X = zeros(outLen, nCh, 'single');
 
     row = 0;                 % rows filled so far
-    climSamp = cell(1, nFiles);   % small per-file subsample for the colour limit
-    for i = 1:nFiles
+    climSamp = cell(1, nChunks);  % small per-chunk subsample for the colour limit
+    for i = 1:nChunks
         if isvalid(dlg)
-            dlg.Value   = (i - 1) / nFiles;
-            dlg.Message = sprintf("Reading & preprocessing file %d/%d: %s", ...
-                i, nFiles, fileList(i));
+            dlg.Value   = (i - 1) / nChunks;
+            dlg.Message = sprintf("Reading & preprocessing chunk %d/%d: %s", ...
+                i, nChunks, plan(i).name);
         end
 
-        ffn = fullfile(d.Folder, fileList(i));
-        S = read_Intan_RHD2000_file_modified(ffn, Verbosity="silent");
-        if ~isfield(S, 'amplifier_data') || isempty(S.amplifier_data)
+        Xi = d.readChunkUV(plan(i));        % [m x nChanAll], microvolts (double)
+        if isempty(Xi)
             continue
         end
-        Xi = S.amplifier_data.';            % [m x nChanAll], microvolts (double)
-        clear S                              % release the rest of the file
         if max(chans) > size(Xi, 2)
             error('IntanKilosortApp:Visualize:BadChannels', ...
                 'Channel %d requested but %s has %d amplifier channels.', ...
-                max(chans), fileList(i), size(Xi, 2));
+                max(chans), plan(i).name, size(Xi, 2));
         end
         Xi = Xi(:, chans);                  % keep only requested channels
 
@@ -174,7 +177,8 @@ try
     % relative (matching toBin) so artifacts marked here map correctly. Uses the
     % TRUE sample rate. "(all)" -> 0; a single file -> duration of files before it.
     tOffset = 0;
-    if fileSel ~= "(all)" && fileSel ~= "" && ~isempty(d.Files)
+    if d.RecordingFormat == "traditional" && fileSel ~= "(all)" && fileSel ~= "" ...
+            && ~isempty(d.Files)
         fi = find(d.Files == fileSel, 1);
         if ~isempty(fi) && fi > 1 && ~isempty(d.PerFile) ...
                 && isfield(d.PerFile, 'numAmplifierSamples')
@@ -188,6 +192,12 @@ try
         'X', X, 'Fs', Fs, 'nSamp', nSamp, 'nCh', nCh, ...
         'chans', chans(:).', 'name', d.Name, 'clim0', clim0, ...
         'dsIndex', idx, 'tOffset', tOffset);
+
+    % Automatically detected artifacts for this window (display overlay only;
+    % uses the same detector as the Artifacts tab / .bin write). Intervals are
+    % window-relative seconds, matching the displayed time axis. Drawn by
+    % drawVizArtifacts alongside any manually marked periods.
+    obj.VizData.detectedIntervals = computeDetectedIntervals(d, X, Fs);
 
     % Initial viewport from the Start/Window fields.
     tWin  = min(obj.VizDurField.Value, nSamp / Fs);
@@ -218,25 +228,33 @@ try
             "Cached %d ch x %d samples (%.2f s). Navigate with the mouse.", ...
             nCh, nSamp, nSamp / Fs);
     end
+
+    nDet = size(obj.VizData.detectedIntervals, 1);
+    obj.setStatus(sprintf("Plotted %s: %d ch, %.2f s (%d artifact interval(s) detected).", ...
+        d.Name, nCh, nSamp / Fs, nDet), ...
+        "Scroll/drag to navigate; toggle 'Mark Artifacts' to add manual periods.");
 catch ME
     if isvalid(dlg); close(dlg); end
     uialert(obj.Fig, ME.message, "Visualize failed");
+    obj.setStatus("Visualize failed: " + string(ME.message));
 end
 end
 
 
-function n = perFileSampleCounts(d, fileList)
-%perFileSampleCounts  Amplifier sample count for each name in fileList.
-%   Looked up from the parsed PerFile header summary (no data read). Files with
-%   no header entry contribute 0 (they are skipped while streaming too).
-n = zeros(1, numel(fileList));
-if isempty(d.PerFile) || ~isfield(d.PerFile, 'name'); return; end
-pfNames = string({d.PerFile.name});
-for k = 1:numel(fileList)
-    j = find(pfNames == fileList(k), 1);
-    if ~isempty(j)
-        n(k) = d.PerFile(j).numAmplifierSamples;
-    end
+function iv = computeDetectedIntervals(d, X, Fs)
+%computeDetectedIntervals  Run the automatic artifact detector on the loaded
+%   window and return its intervals [k x 2] in window-relative seconds. Uses the
+%   dataset's current ArtifactConfig (the same settings the Artifacts tab and
+%   the .bin write use). Returns 0x2 on any failure or when nothing is flagged.
+iv = zeros(0, 2); %#ok<PREALL>  default when detection fails or flags nothing
+try
+    cfg = IntanDataset.normalizeArtifactConfig(d.ArtifactConfig);
+    [~, iv] = d.detectArtifacts(double(X), Method=cfg.Method, ...
+        Threshold=cfg.Threshold, RmsWindowMs=cfg.RmsWindowMs, ...
+        MinChannels=cfg.MinChannels, MergeGapMs=cfg.MergeGapMs, ...
+        PadMs=cfg.PadMs, Fs=Fs);
+catch
+    iv = zeros(0, 2);
 end
 end
 

@@ -72,7 +72,12 @@ if obj.NumFiles == 0
     obj.discoverFiles();
 end
 if obj.NumFiles == 0
-    error('IntanDataset:toBin:NoFiles', 'No *.rhd files in %s', obj.Folder);
+    error('IntanDataset:toBin:NoFiles', 'No Intan files in %s', obj.Folder);
+end
+% Header metadata (Fs, sample counts) drives the stream plan and is needed up
+% front for the .bin sidecar; parse it now if it has not been parsed yet.
+if isnan(obj.Fs) || isempty(obj.PerFile)
+    obj.refreshMetadata();
 end
 
 % Resolve config (per-call -> dataset defaults)
@@ -91,11 +96,13 @@ artGapMs  = opts.ArtifactMergeGapMs;    if isnan(artGapMs);       artGapMs  = ac
 artMinCh  = opts.ArtifactMinChannels;   if isnan(artMinCh);       artMinCh  = acfg.MinChannels;  end
 artPadMs  = opts.ArtifactPadMs;         if isnan(artPadMs);       artPadMs  = acfg.PadMs;        end
 
-% Resolve file list (chronological unless overridden)
-if isempty(opts.Files)
-    fileList = obj.Files;
-else
-    fileList = opts.Files;
+% Resolve the streaming plan (one chunk per *.rhd file for traditional; bounded
+% sample windows over the flat .dat for split formats). The downstream loop is
+% identical for every format because each chunk yields a [nSamp x nChan]
+% microvolt matrix from readChunkUV.
+plan = obj.streamPlan(Files=opts.Files);
+if isempty(plan)
+    error('IntanDataset:toBin:NoFiles', 'No readable Intan data in %s', obj.Folder);
 end
 
 % Ensure output folder exists
@@ -132,20 +139,15 @@ artWinMsUsed   = NaN; % resolved running-RMS window (ms), for reporting
 Fs        = obj.Fs;
 tailRaw   = [];  % carried raw samples for overlap edge mode
 
-fprintf('Streaming %d file(s) -> %s\n', numel(fileList), binFile);
-for i = 1:numel(fileList)
-    ffn = fullfile(obj.Folder, fileList(i));
-    S = read_Intan_RHD2000_file_modified(ffn, Verbosity="silent");
+fprintf('Streaming %d chunk(s) -> %s\n', numel(plan), binFile);
+for i = 1:numel(plan)
+    X = obj.readChunkUV(plan(i));  % [nSamples x nChan], microvolts (all channels)
 
-    if ~isfield(S, 'amplifier_data') || isempty(S.amplifier_data)
-        warning('IntanDataset:toBin:NoData', 'No amplifier data in %s; skipping.', fileList(i));
+    if isempty(X)
+        warning('IntanDataset:toBin:NoData', 'No amplifier data in %s; skipping.', plan(i).name);
         continue
     end
-    if isnan(Fs)
-        Fs = S.frequency_parameters.amplifier_sample_rate;
-    end
 
-    X = S.amplifier_data.';  % [nSamples x nChan], microvolts
     thisNumChan = size(X, 2);
 
     % Channel-count guard (flat bin cannot tolerate a change)
@@ -155,7 +157,7 @@ for i = 1:numel(fileList)
         error('IntanDataset:toBin:ChannelMismatch', ...
             ['Amplifier channel count changed mid-dataset (%d -> %d) at %s. ', ...
              'A flat int16 .bin cannot represent this.'], ...
-            firstNumChan, thisNumChan, fileList(i));
+            firstNumChan, thisNumChan, plan(i).name);
     end
 
     % Channel reorder/subset

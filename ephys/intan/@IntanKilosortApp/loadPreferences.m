@@ -74,6 +74,15 @@ if ispref(g, 'KilosortConfig')
         obj.applyKilosortConfig(cfg);
     end
 end
+
+% Seed the Python exe on first launch with the kilosort env python (the
+% SpikeInterface + Kilosort4 environment) when nothing was restored.
+if strlength(strtrim(string(obj.PythonExeField.Value))) == 0
+    dp = obj.defaultPythonExe();
+    if strlength(dp) > 0
+        obj.PythonExeField.Value = char(dp);
+    end
+end
 end
 
 

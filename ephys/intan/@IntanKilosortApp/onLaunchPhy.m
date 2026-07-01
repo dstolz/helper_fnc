@@ -18,7 +18,10 @@ end
 % results path matches what Kilosort4 actually wrote.
 obj.applyConfigToProject();
 
-resultsDir = fullfile(char(d.outputFolder()), 'kilosort4');
+% Resolve the folder that actually holds params.py. For the SpikeInterface
+% engine this is <kilosort4>/si/sorter_output (see kilosortResultsDir); for the
+% legacy engine it is <kilosort4> directly.
+resultsDir = char(d.kilosortResultsDir());
 paramsPy   = fullfile(resultsDir, 'params.py');
 if ~isfile(paramsPy)
     uialert(obj.Fig, sprintf(['No Kilosort4 results for "%s".' newline ...

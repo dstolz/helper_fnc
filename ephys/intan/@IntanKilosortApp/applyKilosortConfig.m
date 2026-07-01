@@ -5,9 +5,10 @@ function applyKilosortConfig(obj, cfg)
 setIf(@() set2(obj.PythonExeField, 'Value', cfg, 'PythonExe', @char));
 setIf(@() set2(obj.CondaEnvField, 'Value', cfg, 'CondaEnv', @char));
 setIf(@() set2(obj.OutputRootField, 'Value', cfg, 'OutputRoot', @char));
-if isfield(cfg, 'Scale'); obj.ScaleField.Value = cfg.Scale; end
-if isfield(cfg, 'Dtype') && ismember(cfg.Dtype, obj.DtypeDropDown.Items)
-    obj.DtypeDropDown.Value = cfg.Dtype;
+
+% SpikeInterface preprocessing config.
+if isfield(cfg, 'SIConfig')
+    setIf(@() obj.applySIConfig(cfg.SIConfig));
 end
 
 % KS4 parameter controls.

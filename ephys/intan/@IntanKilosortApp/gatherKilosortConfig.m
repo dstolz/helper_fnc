@@ -9,8 +9,9 @@ cfg = struct();
 cfg.PythonExe   = char(obj.PythonExeField.Value);
 cfg.CondaEnv    = char(obj.CondaEnvField.Value);
 cfg.OutputRoot  = char(obj.OutputRootField.Value);
-cfg.Scale       = obj.ScaleField.Value;
-cfg.Dtype       = char(obj.DtypeDropDown.Value);
+
+% SpikeInterface preprocessing config (see IntanDataset.SIConfig).
+cfg.SIConfig    = obj.gatherSIConfig();
 
 % KS4 parameters, raw as entered in the controls.
 cfg.Params = struct();

@@ -24,7 +24,11 @@ Kilosort4 probe `.json` files have the shape produced by
 - `xc`, `yc` — electrode x/y coordinates in microns (same length as `chanMap`).
 - `kcoords` — shank/group index per channel (optional; defaults to all zeros).
 - `n_chan` — total channel count. The app reports `n_chan` when present,
-  otherwise it falls back to `numel(chanMap)`.
+  otherwise it falls back to `numel(chanMap)`. Because a `chanMap` can never
+  have more sites than the total channel count, an `n_chan` that is smaller
+  than `numel(chanMap)` is treated as invalid (e.g. accidentally written from
+  a 0-based map's *max index*, which is one short of the count) and the map
+  length is used instead.
 
 ## Channel-count checking
 

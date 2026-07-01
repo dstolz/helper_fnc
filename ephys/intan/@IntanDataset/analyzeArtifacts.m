@@ -1,8 +1,9 @@
 function summary = analyzeArtifacts(obj, opts)
 %analyzeArtifacts  Summarise automatic artifact detection over the recording.
-%   SUMMARY = ds.analyzeArtifacts() streams the recording one *.rhd file at a
-%   time (the same one-file-in-memory invariant toBin relies on), runs
-%   detectArtifacts on each file with the dataset's ArtifactConfig, and
+%   SUMMARY = ds.analyzeArtifacts() streams the recording one chunk at a time
+%   (per *.rhd file for the traditional format, or bounded sample windows for the
+%   split formats - the same one-chunk-in-memory invariant toBin relies on), runs
+%   detectArtifacts on each chunk with the dataset's ArtifactConfig, and
 %   accumulates statistics WITHOUT writing anything to disk. It is the read-only
 %   counterpart to toBin's blanking step, used by the Artifacts tab to preview
 %   how much of the recording would be zeroed.
@@ -53,7 +54,10 @@ if obj.NumFiles == 0
     obj.discoverFiles();
 end
 if obj.NumFiles == 0
-    error('IntanDataset:analyzeArtifacts:NoFiles', 'No *.rhd files in %s', obj.Folder);
+    error('IntanDataset:analyzeArtifacts:NoFiles', 'No Intan files in %s', obj.Folder);
+end
+if isnan(obj.Fs) || isempty(obj.PerFile)
+    obj.refreshMetadata();
 end
 
 % Resolve detection params (per-call overrides ds.ArtifactConfig).
@@ -65,51 +69,42 @@ mergeGapMs = opts.MergeGapMs;  if isnan(mergeGapMs);    mergeGapMs = cfg.MergeGa
 minCh    = opts.MinChannels;   if isnan(minCh);         minCh    = cfg.MinChannels;  end
 padMs    = opts.PadMs;         if isnan(padMs);         padMs    = cfg.PadMs;        end
 
-% File list (chronological unless overridden)
-if isempty(opts.Files)
-    fileList = obj.Files;
-else
-    fileList = opts.Files;
+% Streaming plan (per *.rhd file for traditional; bounded sample windows for the
+% split formats). The loop body is format-agnostic via readChunkUV.
+plan = obj.streamPlan(Files=opts.Files);
+
+% Channel names from the parsed header (applying any reorder/subset), independent
+% of which chunk we are on - identical for every supported format.
+channelNames = obj.ChannelNames;
+if ~isempty(opts.ChannelOrder)
+    if isempty(channelNames) || max(opts.ChannelOrder) > numel(channelNames)
+        channelNames = string.empty(1,0);   % resolved against data width below
+    else
+        channelNames = channelNames(opts.ChannelOrder);
+    end
 end
 
 Fs = obj.Fs;
 nSamples = 0;
 nBlanked = 0;
 nIntervals = 0;
-channelCounts = [];     % [1 x nChan], grown on first file
-channelNames  = string.empty(1,0);
+channelCounts = [];     % [1 x nChan], grown on first chunk
 rmsWindowMsUsed = NaN;
 
-nFiles = numel(fileList);
-for i = 1:nFiles
+nChunks = numel(plan);
+for i = 1:nChunks
     if ~isempty(opts.ProgressFcn)
-        opts.ProgressFcn(i, nFiles, fileList(i));
+        opts.ProgressFcn(i, nChunks, plan(i).name);
     end
-    ffn = fullfile(obj.Folder, fileList(i));
-    S = read_Intan_RHD2000_file_modified(ffn, Verbosity="silent");
-    if ~isfield(S, 'amplifier_data') || isempty(S.amplifier_data)
+    X = obj.readChunkUV(plan(i));   % [nSamples x nChan], microvolts (all channels)
+    if isempty(X)
         continue
     end
-    if isnan(Fs)
-        Fs = S.frequency_parameters.amplifier_sample_rate;
-    end
-
-    X = S.amplifier_data.';   % [nSamples x nChan], microvolts
-
-    % Channel names (first file only), applying any reorder/subset.
-    if isempty(channelNames)
-        cn = string({S.amplifier_channels.custom_channel_name});
-        if ~isempty(opts.ChannelOrder)
-            cn = cn(opts.ChannelOrder);
-        end
-        channelNames = cn;
-    end
-    clear S
 
     if ~isempty(opts.ChannelOrder)
         if max(opts.ChannelOrder) > size(X, 2)
             error('IntanDataset:analyzeArtifacts:BadChannelOrder', ...
-                'ChannelOrder references channel %d but file has %d.', ...
+                'ChannelOrder references channel %d but recording has %d.', ...
                 max(opts.ChannelOrder), size(X, 2));
         end
         X = X(:, opts.ChannelOrder);
@@ -155,5 +150,5 @@ summary.nBlanked    = nBlanked;
 summary.fraction    = nBlanked / max(nSamples, 1);
 summary.pctDuration = 100 * nBlanked / max(nSamples, 1);
 summary.nIntervals  = nIntervals;
-summary.files       = fileList;
+summary.files       = string({plan.name});
 end

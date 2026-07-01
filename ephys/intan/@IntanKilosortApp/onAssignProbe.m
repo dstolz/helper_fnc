@@ -29,20 +29,41 @@ end
 
 nProbe = localProbeCount(pf);
 mismatch = 0;
+ch = IntanDataset.parseChannelList(obj.ExcludeChannelsField.Value);
+nTrim = 0;
 for k = 1:numel(targets)
     targets(k).ProbeFile = pf;
     if ~isnan(nProbe) && ~isnan(targets(k).NumChannels) && nProbe ~= targets(k).NumChannels
         mismatch = mismatch + 1;
     end
+    if scope == "all"
+        keep = ch;
+        if ~isnan(targets(k).NumChannels)
+            keep = ch(ch <= targets(k).NumChannels);
+            nTrim = nTrim + (numel(ch) - numel(keep));
+        end
+        targets(k).ExcludeChannels = keep;
+    end
+end
+
+for k = 1:numel(targets)
+    targets(k).writeManifest();   % persist the new probe (+ exclusions) assignment
 end
 
 obj.refreshDatasetsTable();
 [~, pn, pe] = fileparts(pf);
 msg = sprintf("Assigned %s to %d dataset(s).", pn + pe, numel(targets));
+if scope == "all" && ~isempty(ch)
+    msg = msg + sprintf(" Excluded %d channel(s) on all.", numel(ch));
+end
 if mismatch > 0
     msg = msg + sprintf(" Warning: %d have a channel-count mismatch.", mismatch);
 end
+if nTrim > 0
+    msg = msg + sprintf(" (%d out-of-range channel entr(y/ies) ignored.)", nTrim);
+end
 obj.ScanStatusLabel.Text = msg;
+obj.setStatus(msg);
 end
 
 
@@ -50,9 +71,12 @@ function n = localProbeCount(pf)
 n = NaN;
 try
     probe = jsondecode(fileread(pf));
-    if isfield(probe, 'n_chan'); n = probe.n_chan;
-    elseif isfield(probe, 'chanMap'); n = numel(probe.chanMap);
-    end
+    % n_chan, but never fewer than the mapped sites (a 0-based map's max index
+    % yields an n_chan one short of numel(chanMap)); fall back to map length.
+    nMap = NaN;
+    if isfield(probe, 'chanMap'); nMap = numel(probe.chanMap); end
+    if isfield(probe, 'n_chan');  n = double(probe.n_chan);    end
+    if ~isnan(nMap); n = max([n, nMap], [], 'omitnan'); end
 catch
 end
 end

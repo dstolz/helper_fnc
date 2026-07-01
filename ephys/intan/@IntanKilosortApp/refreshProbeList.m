@@ -53,29 +53,16 @@ end
 
 
 function m = readProbeMeta(pf)
-%readProbeMeta  Parse channel/shank/depth counts and the optional notes field.
-m = struct('nChan', NaN, 'nShank', NaN, 'depth', NaN, 'notes', "");
-try
-    probe = jsondecode(fileread(pf));
-catch
-    m.notes = "(invalid JSON)";
+%readProbeMeta  Channel/shank/depth/notes via the shared DatasetTracker parser.
+%   Unreadable files are flagged "(invalid JSON)" so they still show in the
+%   probe table. The actual parsing lives in DatasetTracker so the Probe tab
+%   and the dataset inventory stay in lockstep.
+probe = DatasetTracker.readJson(pf);
+if isempty(probe)
+    m = struct('nChan', NaN, 'nShank', NaN, 'depth', NaN, 'notes', "(invalid JSON)");
     return
 end
-if isfield(probe, 'n_chan')
-    m.nChan = double(probe.n_chan);
-elseif isfield(probe, 'chanMap')
-    m.nChan = numel(probe.chanMap);
-end
-if isfield(probe, 'kcoords') && ~isempty(probe.kcoords)
-    m.nShank = numel(unique(probe.kcoords));
-end
-if isfield(probe, 'yc') && ~isempty(probe.yc)
-    yc = double(probe.yc(:));
-    m.depth = max(yc) - min(yc);
-end
-if isfield(probe, 'notes') && ~isempty(probe.notes)
-    m.notes = string(probe.notes);
-end
+m = DatasetTracker.probeMeta(probe);
 end
 
 

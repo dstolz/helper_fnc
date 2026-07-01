@@ -1,5 +1,8 @@
 function data = readData(obj, opts)
 %readData  Read amplifier (and optional ADC/aux) data into one struct.
+%   Works for every supported layout: the traditional path below is used for
+%   *.rhd folders, while the split formats (one-file-per-signal / one-file-per-
+%   channel) are handled by readSplitAll, which returns this same struct shape.
 %   DATA = ds.readData() reads every *.rhd file in chronological order via
 %   READ_INTAN_RHD2000_FILE_MODIFIED, transposes each amplifier matrix to
 %   [nSamples x nChan], concatenates in time, and extracts digital-input
@@ -51,7 +54,17 @@ if obj.NumFiles == 0
     obj.discoverFiles();
 end
 if obj.NumFiles == 0
-    error('IntanDataset:readData:NoFiles', 'No *.rhd files in %s', obj.Folder);
+    error('IntanDataset:readData:NoFiles', 'No Intan files in %s', obj.Folder);
+end
+
+% Split formats (info.rhd + flat .dat) read through a dedicated path that
+% returns this exact struct shape (amplifier, events, ADC/aux); see readSplitAll.
+if obj.RecordingFormat == "one-file-per-signal" || ...
+        obj.RecordingFormat == "one-file-per-channel"
+    data = obj.readSplitAll(Files=opts.Files, KeepChannels=opts.KeepChannels, ...
+        IncludeADC=opts.IncludeADC, IncludeAux=opts.IncludeAux, ...
+        Concatenate=opts.Concatenate, ProgressFcn=opts.ProgressFcn);
+    return
 end
 
 % Resolve which files to read (chronological order preserved unless overridden)

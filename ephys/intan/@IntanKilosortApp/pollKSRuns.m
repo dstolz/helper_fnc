@@ -42,6 +42,8 @@ for i = 1:numel(obj.KSRuns)
     state = "done";
     if isfield(s, 'state'); state = string(s.state); end
     obj.KSRuns(i).done = true;
+    % Record the completed sort in the dataset's manifest.
+    updateManifestFor(obj, obj.KSRuns(i).Name);
     if state == "done"
         obj.log("[done] %s - Kilosort4 complete (%s)", obj.KSRuns(i).Name, ...
             obj.KSRuns(i).resultsDir);
@@ -62,6 +64,8 @@ obj.refreshDatasetsTable();
 
 if pending == 0
     obj.log("=== all %d background run(s) complete ===", nTot);
+    obj.setStatus(sprintf("Kilosort4 finished: %d background run(s) complete.", nTot), ...
+        "Open the Review tab to inspect sorted units.");
     obj.stopKSMonitor();
     obj.KSRuns(:) = [];   % clear the completed batch
 end
@@ -69,6 +73,19 @@ end
 
 
 %% ---- local helpers ----------------------------------------------------
+
+function updateManifestFor(obj, name)
+%updateManifestFor  Refresh the manifest of the dataset named NAME (if scanned),
+%   so a completed background sort is reflected on disk and in the table.
+if isempty(obj.Project) || obj.Project.NumDatasets == 0; return; end
+ix = find([obj.Project.Datasets.Name] == string(name), 1);
+if isempty(ix); return; end
+try
+    obj.Project.Datasets(ix).writeManifest();
+catch
+end
+end
+
 
 function pos = tailLog(obj, run)
 %tailLog  Append RUN's newly-written ks4_run.log lines to the status box.

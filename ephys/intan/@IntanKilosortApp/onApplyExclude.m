@@ -24,6 +24,8 @@ switch scope
             % don't pop a modal (this fires on every commit).
             obj.ScanStatusLabel.Text = ...
                 "Select a dataset row (Datasets tab) to apply channel exclusions.";
+            obj.setStatus("Channel exclusions not applied: no dataset selected.", ...
+                "Click a dataset row on the Datasets tab, then re-enter exclusions.");
             return
         end
         targets = d;
@@ -42,6 +44,7 @@ for k = 1:numel(targets)
         nTrim = nTrim + (numel(ch) - numel(keep));
     end
     t.ExcludeChannels = keep;
+    t.writeManifest();   % persist the updated exclusions
 end
 
 % Reflect the (possibly trimmed) list for the active dataset and redraw.
@@ -59,4 +62,5 @@ if nTrim > 0
     msg = msg + sprintf(" (%d out-of-range entr(y/ies) ignored.)", nTrim);
 end
 obj.ScanStatusLabel.Text = msg;
+obj.setStatus(msg);
 end

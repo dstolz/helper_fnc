@@ -38,6 +38,10 @@ classdef IntanKilosortApp < handle
         Fig   matlab.ui.Figure
         Tabs  matlab.ui.container.TabGroup
 
+        % --- Global status bar (bottom strip; see buildUI/setStatus) ---
+        StatusBar  matlab.ui.control.Label   % last action / current state
+        StatusHint matlab.ui.control.Label   % suggested next action
+
         TabDatasets  matlab.ui.container.Tab
         TabVisualize matlab.ui.container.Tab
         TabArtifacts matlab.ui.container.Tab
@@ -95,6 +99,7 @@ classdef IntanKilosortApp < handle
         ProbeFolderField    matlab.ui.control.EditField
         BrowseProbeFolderButton matlab.ui.control.Button
         ImportProbeButton   matlab.ui.control.Button
+        EditProbeJSONButton matlab.ui.control.Button
         RefreshProbesButton matlab.ui.control.Button
         ProbeTable          matlab.ui.control.Table
         ProbeInfoLabel      matlab.ui.control.Label
@@ -103,8 +108,7 @@ classdef IntanKilosortApp < handle
         AssignSelectedButton matlab.ui.control.Button
         AssignAllButton     matlab.ui.control.Button
         ExcludeChannelsField matlab.ui.control.EditField
-        ApplyExcludeSelectedButton matlab.ui.control.Button
-        ApplyExcludeAllButton matlab.ui.control.Button
+        ShowChanNumbersCheckBox matlab.ui.control.CheckBox
 
         % --- Kilosort tab ---
         PythonExeField    matlab.ui.control.EditField
@@ -113,8 +117,17 @@ classdef IntanKilosortApp < handle
         OutputRootField   matlab.ui.control.EditField
         BrowseOutputButton matlab.ui.control.Button
         PhyCmdField       matlab.ui.control.EditField
-        ScaleField        matlab.ui.control.NumericEditField
-        DtypeDropDown     matlab.ui.control.DropDown
+
+        % --- SpikeInterface preprocessing controls (see gatherSIConfig) ---
+        SIFilterCheckBox     matlab.ui.control.CheckBox
+        SIFilterMinField     matlab.ui.control.NumericEditField
+        SIFilterMaxField     matlab.ui.control.NumericEditField
+        SICommonRefCheckBox  matlab.ui.control.CheckBox
+        SIRefOperatorDropDown matlab.ui.control.DropDown
+        SIDetectBadCheckBox  matlab.ui.control.CheckBox
+        SIBadMethodDropDown  matlab.ui.control.DropDown
+        SIBadActionDropDown  matlab.ui.control.DropDown
+
         % Kilosort4 parameter controls, keyed by KS4 settings name. Built from
         % kilosortParamSpec(); see buildKilosortTab / buildKS4Extra.
         ParamControls struct = struct()
@@ -123,7 +136,7 @@ classdef IntanKilosortApp < handle
         DryRunCheckBox    matlab.ui.control.CheckBox
         SaveConfigButton  matlab.ui.control.Button
         LoadConfigButton  matlab.ui.control.Button
-        WriteBinButton    matlab.ui.control.Button
+        KSDocsButton      matlab.ui.control.Button
         RunKilosortButton matlab.ui.control.Button
         LaunchPhyButton   matlab.ui.control.Button
         KSProgressLabel   matlab.ui.control.Label
@@ -363,8 +376,11 @@ classdef IntanKilosortApp < handle
         end
 
         function populateReviewDatasets(obj)
-            % Fill the Review dataset dropdown from scanned datasets whose
-            % kilosort4/ results folder exists on disk.
+            % Fill the Review dataset dropdown from scanned datasets that have a
+            % kilosort4 run with spike results. Discovery is delegated to each
+            % dataset's DatasetTracker (latestKilosortRun), so the dropdown finds
+            % results even in non-default result dirs and gates on the same
+            % spike_clusters.npy that loadReviewResults requires.
             obj.ReviewDatasetDropDown.Items = {'(pick folder, or scan first)'};
             obj.ReviewDatasetDropDown.ItemsData = {};
             if isempty(obj.Project) || obj.Project.NumDatasets == 0; return; end
@@ -373,10 +389,10 @@ classdef IntanKilosortApp < handle
             dirs  = {};
             for k = 1:obj.Project.NumDatasets
                 d = obj.Project.Datasets(k);
-                rd = fullfile(char(d.outputFolder()), 'kilosort4');
-                if isfile(fullfile(rd, 'params.py'))
-                    names{end+1} = char(d.Name);   %#ok<AGROW>
-                    dirs{end+1}  = rd;             %#ok<AGROW>
+                run = d.tracker().latestKilosortRun();
+                if ~isempty(run) && run.HasResults
+                    names{end+1} = char(d.Name);    %#ok<AGROW>
+                    dirs{end+1}  = char(run.Dir);   %#ok<AGROW>
                 end
             end
             if isempty(names)
@@ -437,6 +453,74 @@ classdef IntanKilosortApp < handle
             delete(obj.Fig);
         end
 
+        %% --- Global status bar -------------------------------------------
+        function setStatus(obj, message, hint)
+            % Update the bottom status bar. MESSAGE describes the last action or
+            % current state; the optional HINT (shown italic, on the right) is a
+            % suggested next step. Pass HINT = "" or omit it to clear the hint;
+            % omit BOTH the hint arg and let suggestNextStep supply a contextual
+            % one by passing the sentinel [] (see callers).
+            if isempty(obj.StatusBar) || ~isvalid(obj.StatusBar); return; end
+            obj.StatusBar.Text = char(string(message));
+            if nargin < 3
+                hint = obj.suggestNextStep();
+            end
+            hint = string(hint);
+            if strlength(hint) == 0
+                obj.StatusHint.Text = "";
+            else
+                obj.StatusHint.Text = char("Next: " + hint);
+            end
+            drawnow limitrate;
+        end
+
+        function hint = suggestNextStep(obj)
+            % Suggest the next useful action from the current project state:
+            % scan -> assign a probe -> run Kilosort4 (SpikeInterface) -> review.
+            P = obj.Project;
+            if isempty(P) || P.NumDatasets == 0
+                hint = "Browse to a parent folder and click Scan.";
+                return
+            end
+            ds = P.Datasets;
+            n  = numel(ds);
+            nProbe = 0; nKS = 0;
+            for k = 1:n
+                pf = string(ds(k).ProbeFile);
+                if strlength(pf) > 0 && isfile(char(pf)); nProbe = nProbe + 1; end
+                if ds(k).hasPhyOutput(); nKS = nKS + 1; end
+            end
+            if nProbe < n
+                hint = sprintf("Assign a probe on the Probe tab (%d/%d have one).", nProbe, n);
+            elseif nKS >= n
+                hint = "All datasets sorted - open the Review tab to inspect units.";
+            else
+                hint = sprintf("Set up the Kilosort tab, then Run Kilosort4 (%d/%d sorted).", nKS, n);
+            end
+        end
+
+        function onTabChanged(obj)
+            % Refresh the status bar when the active tab changes: describe what
+            % the tab is for and re-evaluate the suggested next step.
+            switch obj.Tabs.SelectedTab
+                case obj.TabDatasets
+                    msg = "Datasets: scan a folder, then tick rows to include in batch actions.";
+                case obj.TabProbe
+                    msg = "Probe: pick a probe .json and assign it to the selected or all datasets.";
+                case obj.TabArtifacts
+                    msg = "Artifacts: tune the detector and preview what would be silenced.";
+                case obj.TabVisualize
+                    msg = "Visualize: plot a short window; drag to mark manual artifacts.";
+                case obj.TabKilosort
+                    msg = "Kilosort: set paths + SpikeInterface preprocessing, then Run Kilosort4.";
+                case obj.TabReview
+                    msg = "Review: load a results folder to inspect sorted units.";
+                otherwise
+                    msg = "Ready.";
+            end
+            obj.setStatus(msg);
+        end
+
         function log(obj, fmt, varargin)
             % Append a timestamped line to the Kilosort log area.
             line = sprintf("%s  %s", datetime('now', 'Format', 'HH:mm:ss'), ...
@@ -475,6 +559,16 @@ classdef IntanKilosortApp < handle
             if isempty(evt.Indices); return; end
             obj.SelectedProbeRow = evt.Indices(1);
             obj.onProbeSelected();
+        end
+
+        function onEditProbeJSON(obj)
+            % Open the selected probe .json in the MATLAB editor (or system default).
+            pf = obj.selectedProbeFile();
+            if pf == "" || ~isfile(pf)
+                uialert(obj.Fig, "Select a probe first.", "Edit Probe JSON");
+                return
+            end
+            matlab.desktop.editor.openDocument(char(pf));
         end
 
         function syncExcludeField(obj)
@@ -566,27 +660,115 @@ classdef IntanKilosortApp < handle
             end
         end
 
+        function updatePhyButtonState(obj)
+            % Enable "Open in phy" only when the selected dataset has Kilosort4
+            % output (a params.py phy can open); disabled otherwise.
+            if isempty(obj.LaunchPhyButton) || ~isvalid(obj.LaunchPhyButton); return; end
+            d = obj.currentDataset();
+            ok = ~isempty(d) && d.hasPhyOutput();
+            obj.LaunchPhyButton.Enable = matlab.lang.OnOffSwitchState(ok);
+        end
+
         function applyConfigToProject(obj, P)
-            % Push shared run config (python/conda/output/scale/dtype) into a
-            % project so discover()/pushConfig propagate it to every dataset.
+            % Push shared run config (python/conda/output + SpikeInterface
+            % preprocessing) into a project so it propagates to every dataset.
             if nargin < 2 || isempty(P); P = obj.Project; end
             if isempty(P); return; end
             P.PythonExe  = string(obj.PythonExeField.Value);
             P.CondaEnv   = string(obj.CondaEnvField.Value);
             P.OutputRoot = string(obj.OutputRootField.Value);
-            P.Scale      = obj.ScaleField.Value;
-            P.Dtype      = string(obj.DtypeDropDown.Value);
+            sicfg = obj.gatherSIConfig();
             % Set fields directly (NOT pushConfig) so per-dataset ProbeFile
             % assignments made on the Probe tab are preserved.
             for k = 1:P.NumDatasets
                 d = P.Datasets(k);
                 d.PythonExe = P.PythonExe;
                 d.CondaEnv  = P.CondaEnv;
-                d.Scale     = P.Scale;
-                d.Dtype     = P.Dtype;
+                d.SIConfig  = sicfg;
                 if P.OutputRoot ~= ""
                     d.OutputDir = fullfile(P.OutputRoot, d.Name);
                 end
+            end
+        end
+
+        function cfg = gatherSIConfig(obj)
+            % Build an IntanDataset SIConfig struct from the Kilosort-tab
+            % SpikeInterface preprocessing controls (see IntanDataset.SIConfig).
+            cfg = IntanDataset.defaultSIConfig();
+            if isempty(obj.SIFilterCheckBox) || ~isvalid(obj.SIFilterCheckBox)
+                return   % controls not built yet; return defaults
+            end
+            cfg.Filter            = logical(obj.SIFilterCheckBox.Value);
+            cfg.FilterFreqMin     = obj.SIFilterMinField.Value;
+            cfg.FilterFreqMax     = obj.SIFilterMaxField.Value;
+            cfg.CommonReference   = logical(obj.SICommonRefCheckBox.Value);
+            cfg.ReferenceOperator = string(obj.SIRefOperatorDropDown.Value);
+            cfg.DetectBadChannels = logical(obj.SIDetectBadCheckBox.Value);
+            cfg.BadChannelMethod  = string(obj.SIBadMethodDropDown.Value);
+            cfg.BadChannelAction  = string(obj.SIBadActionDropDown.Value);
+        end
+
+        function applySIConfig(obj, cfg)
+            % Push an SIConfig struct into the preprocessing controls.
+            if isempty(obj.SIFilterCheckBox) || ~isvalid(obj.SIFilterCheckBox); return; end
+            cfg = IntanDataset.normalizeSIConfig(cfg);
+            obj.SIFilterCheckBox.Value    = logical(cfg.Filter);
+            obj.SIFilterMinField.Value    = cfg.FilterFreqMin;
+            obj.SIFilterMaxField.Value    = cfg.FilterFreqMax;
+            obj.SICommonRefCheckBox.Value = logical(cfg.CommonReference);
+            obj.setDropIfMember(obj.SIRefOperatorDropDown, cfg.ReferenceOperator);
+            obj.SIDetectBadCheckBox.Value = logical(cfg.DetectBadChannels);
+            obj.setDropIfMember(obj.SIBadMethodDropDown, cfg.BadChannelMethod);
+            obj.setDropIfMember(obj.SIBadActionDropDown, cfg.BadChannelAction);
+            obj.syncSIEnableStates();
+        end
+
+        function setDropIfMember(~, dd, value)
+            % Set a dropdown's Value only if VALUE is one of its Items (safe for
+            % restoring a possibly-stale saved config).
+            v = char(string(value));
+            if ismember(v, dd.Items)
+                dd.Value = v;
+            end
+        end
+
+        function syncSIEnableStates(obj)
+            % Enable the filter-band + reference-operator + bad-channel controls
+            % only when their master checkbox is ticked.
+            if isempty(obj.SIFilterCheckBox) || ~isvalid(obj.SIFilterCheckBox); return; end
+            onFilter = logical(obj.SIFilterCheckBox.Value);
+            obj.SIFilterMinField.Enable = matlab.lang.OnOffSwitchState(onFilter);
+            obj.SIFilterMaxField.Enable = matlab.lang.OnOffSwitchState(onFilter);
+            obj.SIRefOperatorDropDown.Enable = ...
+                matlab.lang.OnOffSwitchState(logical(obj.SICommonRefCheckBox.Value));
+            onBad = logical(obj.SIDetectBadCheckBox.Value);
+            obj.SIBadMethodDropDown.Enable = matlab.lang.OnOffSwitchState(onBad);
+            obj.SIBadActionDropDown.Enable = matlab.lang.OnOffSwitchState(onBad);
+        end
+
+        function onSIControlsChanged(obj)
+            % Sync enable states, push the config onto every scanned dataset, and
+            % persist it whenever a preprocessing control changes.
+            obj.syncSIEnableStates();
+            if ~isempty(obj.Project) && obj.Project.NumDatasets > 0
+                sicfg = obj.gatherSIConfig();
+                for k = 1:obj.Project.NumDatasets
+                    obj.Project.Datasets(k).SIConfig = sicfg;
+                end
+            end
+            obj.savePreferences();
+        end
+
+        function p = defaultPythonExe(~)
+            % Best-guess python for the SpikeInterface + Kilosort4 pipeline: the
+            % "kilosort" conda env python when present, else "". Used to seed the
+            % Python-exe field on first launch (the user can override).
+            p = "";
+            cands = string(fullfile(getenv('LOCALAPPDATA'), 'miniconda3', 'envs', 'kilosort', 'python.exe'));
+            cands(end+1) = string(fullfile(getenv('USERPROFILE'), 'miniconda3', 'envs', 'kilosort', 'python.exe'));
+            cands(end+1) = string(fullfile(getenv('USERPROFILE'), 'anaconda3', 'envs', 'kilosort', 'python.exe'));
+            for c = cands
+                if isfile(c); p = c; return; end
             end
         end
 
@@ -719,16 +901,31 @@ classdef IntanKilosortApp < handle
         end
 
         function updateVizArtStatus(obj)
-            % Refresh the artifact-count label under the Visualize controls.
+            % Refresh the artifact-count label under the Visualize controls,
+            % reporting both auto-detected (orange) and manual (red) periods.
             if isempty(obj.VizArtStatusLabel) || ~isvalid(obj.VizArtStatusLabel); return; end
+
+            nDet = 0;
+            if ~isempty(obj.VizData) && isfield(obj.VizData, 'detectedIntervals')
+                nDet = size(obj.VizData.detectedIntervals, 1);
+            end
+            detTxt = "";
+            if nDet > 0
+                detTxt = sprintf("%d detected (orange). ", nDet);
+            end
+
             d = obj.currentVizDataset();
             if isempty(d) || isempty(d.ManualArtifacts)
-                obj.VizArtStatusLabel.Text = "No artifacts defined.";
+                if nDet > 0
+                    obj.VizArtStatusLabel.Text = detTxt + "No manual artifacts.";
+                else
+                    obj.VizArtStatusLabel.Text = "No artifacts detected or defined.";
+                end
                 return
             end
             iv = d.ManualArtifacts;
-            obj.VizArtStatusLabel.Text = sprintf( ...
-                "%d artifact period(s), %.3f s total (blanked on .bin write).", ...
+            obj.VizArtStatusLabel.Text = detTxt + sprintf( ...
+                "%d manual period(s), %.3f s total (blanked on .bin write).", ...
                 size(iv, 1), sum(iv(:, 2) - iv(:, 1)));
         end
 

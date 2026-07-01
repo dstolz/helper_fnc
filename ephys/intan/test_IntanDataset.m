@@ -3,8 +3,10 @@ function test_IntanDataset()
 %   Builds synthetic *.rhd fixtures (valid magic + header + known data blocks),
 %   then exercises parseIntanHeader, refreshMetadata, readData, toBin,
 %   matrixToBin, filterContinuous, detectArtifacts, IntanKilosortProject
-%   discovery and runKilosort(DryRun=true). No real Intan files or Kilosort4
-%   install are required.
+%   discovery and runKilosort(DryRun=true). Section 10 builds split-format
+%   fixtures (info.rhd + flat .dat files) for the one-file-per-signal and
+%   one-file-per-channel layouts and checks metadata, readData and a byte-correct
+%   toBin for both. No real Intan files or Kilosort4 install are required.
 %
 %   Usage:  test_IntanDataset
 %
@@ -147,6 +149,143 @@ check(contains(res.command, '"C:\miniconda3\python.exe"'), 'command quotes pytho
 check(contains(res.command, '"'+string(res.scriptPath)+'"') || contains(res.command, res.scriptPath), ...
     'command references script');
 
+fprintf('\n== 9. DatasetTracker integration (ds / project) ==\n');
+% ds.OutputDir = out_stream (section 4); section 8 wrote a dry-run kilosort4/
+% there (settings + script, but no spike output yet).
+dt = ds.tracker();
+check(isa(dt, 'DatasetTracker'), 'ds.tracker() returns a DatasetTracker');
+check(dt.NumBinFiles == 1, 'tracker sees the streamed .bin');
+check(dt.BinFiles(1).NChanBin == numAmp, 'tracker reads .bin sidecar (n_chan_bin)');
+check(dt.NumKilosortRuns >= 1, 'tracker sees the kilosort4 run folder');
+check(~dt.hasKilosort, 'no results yet (dry run wrote no spike_clusters.npy)');
+
+% Simulate a completed sort (existence is all the tracker checks), re-snapshot.
+ksDir = fullfile(char(ds.outputFolder()), 'kilosort4');
+fclose(fopen(fullfile(ksDir, 'spike_clusters.npy'), 'w'));
+fid = fopen(fullfile(ksDir, 'cluster_KSLabel.tsv'), 'w');
+fprintf(fid, 'cluster_id\tKSLabel\n0\tgood\n1\tmua\n'); fclose(fid);
+dt2 = ds.tracker();
+check(dt2.hasKilosort, 'hasKilosort true after results appear');
+run = dt2.latestKilosortRun();
+check(~isempty(run) && run.HasResults && run.NumUnits == 2, ...
+    'latestKilosortRun reports results + cluster count');
+
+% Project-level wrappers + the new gatherMetadata column.
+dtp = P.tracker(1);
+check(isa(dtp, 'DatasetTracker'), 'P.tracker(idx) returns a DatasetTracker');
+T2 = P.gatherMetadata();
+check(any(strcmp('HasKilosort', T2.Properties.VariableNames)), ...
+    'gatherMetadata exposes a HasKilosort column');
+check(islogical(T2.HasKilosort) && ~any(T2.HasKilosort), ...
+    'project datasets (no sorts) -> HasKilosort all false');
+
+fprintf('\n== 10. split formats (one-file-per-signal / one-file-per-channel) ==\n');
+% Known int16 amplifier codes; microvolts = 0.195 * int16 (no 32768 offset).
+nSampSplit = 300;
+ampI16   = int16(randi([-30000 30000], numAmp, nSampSplit));
+expSigUV = 0.195 * double(ampI16).';            % [nSampSplit x numAmp]
+digSplit = zeros(1, nSampSplit); digSplit(50:70) = 1;   % bit-0 line high 50..70
+
+% --- one-file-per-signal: info.rhd + amplifier.dat (+ time/digitalin) --------
+sigFolder = fullfile(root, 'split_signal');
+mkdir(sigFolder);
+writeInfoRHD(fullfile(sigFolder, 'info.rhd'), numAmp, Fs);
+writeDat(fullfile(sigFolder, 'amplifier.dat'), ampI16, 'int16');      % channel-major/sample
+writeDat(fullfile(sigFolder, 'time.dat'), int32(0:nSampSplit-1), 'int32');
+writeDat(fullfile(sigFolder, 'digitalin.dat'), uint16(digSplit), 'uint16');
+
+dsig = IntanDataset(sigFolder);
+check(dsig.RecordingFormat == "one-file-per-signal", 'detect one-file-per-signal');
+check(dsig.NumChannels == numAmp, 'signal: NumChannels from info.rhd');
+check(dsig.Fs == Fs, 'signal: Fs from info.rhd');
+check(dsig.NumSamples == nSampSplit, 'signal: NumSamples from amplifier.dat size');
+check(abs(dsig.Duration - nSampSplit/Fs) < 1e-9, 'signal: Duration');
+dats = dsig.readData();
+check(isequal(size(dats.amplifier), [nSampSplit numAmp]), 'signal: amplifier [nSamples x nChan]');
+check(all(abs(dats.amplifier - expSigUV) < 1e-9, 'all'), 'signal: amplifier microvolts (0.195*int16)');
+check(numel(fieldnames(dats.events)) == 1, 'signal: one dig-in event field');
+evN = fieldnames(dats.events); evSig = dats.events.(evN{1});
+check(size(evSig,1) == 1 && abs(evSig(1,1) - 50/Fs) < 1e-9, 'signal: event onset (sample 50)');
+dsig.OutputDir = fullfile(root, 'out_split_signal');
+isig = dsig.toBin();
+check(isig.nChan == numAmp && isig.nSamples == nSampSplit, 'signal: toBin nChan/nSamples');
+rawSig = reshape(typecast(readBin(isig.filename), 'int16'), numAmp, nSampSplit);
+check(max(abs(double(rawSig) - double(ampI16)), [], 'all') <= 1, 'signal: .bin int16 == source int16');
+
+% --- one-file-per-channel: info.rhd + amp-A-00x.dat (+ time/board-DIN) -------
+chanFolder = fullfile(root, 'split_channel');
+mkdir(chanFolder);
+writeInfoRHD(fullfile(chanFolder, 'info.rhd'), numAmp, Fs);
+for c = 1:numAmp
+    writeDat(fullfile(chanFolder, sprintf('amp-A-%03d.dat', c-1)), ampI16(c,:), 'int16');
+end
+writeDat(fullfile(chanFolder, 'time.dat'), int32(0:nSampSplit-1), 'int32');
+writeDat(fullfile(chanFolder, 'board-DIN-00.dat'), uint16(digSplit), 'uint16');
+
+dchan = IntanDataset(chanFolder);
+check(dchan.RecordingFormat == "one-file-per-channel", 'detect one-file-per-channel');
+check(dchan.NumChannels == numAmp, 'channel: NumChannels');
+check(dchan.NumSamples == nSampSplit, 'channel: NumSamples from amp-A-000.dat size');
+datc = dchan.readData();
+check(all(abs(datc.amplifier - expSigUV) < 1e-9, 'all'), 'channel: amplifier microvolts');
+check(numel(fieldnames(datc.events)) == 1, 'channel: one dig-in event field');
+evcN = fieldnames(datc.events); evChan = datc.events.(evcN{1});
+check(size(evChan,1) == 1 && abs(evChan(1,1) - 50/Fs) < 1e-9, 'channel: event onset (sample 50)');
+dchan.OutputDir = fullfile(root, 'out_split_channel');
+ic = dchan.toBin();
+rawChan = reshape(typecast(readBin(ic.filename), 'int16'), numAmp, nSampSplit);
+check(max(abs(double(rawChan) - double(ampI16)), [], 'all') <= 1, 'channel: .bin int16 == source int16');
+
+% Split toBin must match the in-memory matrixToBin on the same microvolts.
+dsig2 = IntanDataset(sigFolder); dsig2.OutputDir = fullfile(root, 'out_split_mem');
+imem = dsig2.matrixToBin(expSigUV);
+check(isequal(readBin(isig.filename), readBin(imem.filename)), ...
+    'signal: streaming toBin == matrix2kilosort (byte-identical)');
+
+fprintf('\n== 11. artifactIntervals (manual merge + auto streaming) ==\n');
+dsi = IntanDataset(dsFolder);
+% Manual-only: two overlapping periods merge into one; auto disabled by default.
+dsi.ManualArtifacts = [0.001 0.003; 0.0025 0.004];
+ivm = dsi.artifactIntervals();
+check(size(ivm,1) == 1, 'artifactIntervals merges overlapping manual periods');
+check(abs(ivm(1,1) - 0.001) < 1e-9 && abs(ivm(1,2) - 0.004) < 1e-9, ...
+    'merged manual interval spans the union');
+% IncludeAuto=false ignores ArtifactConfig even when Enabled.
+dsi.ArtifactConfig.Enabled = true;
+ivf = dsi.artifactIntervals(IncludeAuto=false);
+check(size(ivf,1) == 1, 'IncludeAuto=false returns manual periods only');
+% Auto detection streams the recording; a low microvolts threshold flags the
+% random fixture broadly, exercising the offset accumulation + merge path.
+dsi.ArtifactConfig.Method = "microvolts";
+dsi.ArtifactConfig.Threshold = 3000;
+dsi.ArtifactConfig.MinChannels = 1;
+iva = dsi.artifactIntervals();
+check(size(iva,2) == 2 && ~isempty(iva), 'artifactIntervals (auto) returns intervals');
+check(all(iva(:,2) >= iva(:,1)), 'auto intervals are well-formed');
+check(max(iva(:,2)) <= dsi.Duration + 1e-6, 'auto intervals lie within the recording');
+
+fprintf('\n== 12. runSpikeInterface(DryRun=true) ==\n');
+dsr = IntanDataset(dsFolder);
+dsr.OutputDir = fullfile(root, 'out_si');
+dsr.ProbeFile = probeFile;                 % from section 8
+dsr.PythonExe = "C:\envs\kilosort\python.exe";
+dsr.ExcludeChannels = 2;                    % 1-based .bin row -> 0-based idx 1
+dsr.ManualArtifacts = [0.0005 0.001];
+resSI = dsr.runSpikeInterface(DryRun=true);
+check(isfile(resSI.settingsPath), 'si_config.json written');
+check(isfile(resSI.scriptPath), 'run_si_ks4.py written');
+cfgSI = jsondecode(fileread(resSI.settingsPath));
+check(cfgSI.n_chan == numAmp, 'config n_chan');
+check(abs(cfgSI.fs - Fs) < 1e-9, 'config fs');
+check(strcmp(char(cfgSI.recording_format), 'traditional'), 'config recording_format');
+check(numel(cfgSI.files) == 2, 'config lists both rhd files');
+check(isequal(cfgSI.exclude_channels(:).', 1), 'exclude_channels 0-based (2 -> 1)');
+check(cfgSI.preprocessing.detect_bad_channels.enabled, 'detect_bad_channels on by default');
+check(cfgSI.preprocessing.silence_periods.enabled, 'silence enabled with a manual period');
+check(~cfgSI.preprocessing.filter.enabled, 'SI bandpass off by default');
+check(contains(resSI.command, 'run_si_ks4.py'), 'command references the script');
+check(endsWith(char(resSI.resultsDir), 'kilosort4'), 'results dir is the kilosort4 run folder');
+
 fprintf('\n================  %d passed, %d failed  ================\n', nPass, nFail);
 if nFail > 0
     error('test_IntanDataset:Failures', '%d checks failed.', nFail);
@@ -239,6 +378,54 @@ fwrite(fid, numel(str) * 2, 'uint32');
 for i = 1:numel(str)
     fwrite(fid, double(str(i)), 'uint16');
 end
+end
+
+
+function writeInfoRHD(ffn, numAmp, Fs)
+%writeInfoRHD  Write a header-only v2.0 info.rhd (no data blocks) for the split
+%   formats. Declares numAmp amplifier channels (native names A-000..A-00N, so
+%   amp-A-00x.dat filenames line up) plus one bit-0 dig-in line; no aux/adc.
+
+fid = fopen(ffn, 'w', 'ieee-le');
+assert(fid >= 0, 'cannot open %s', ffn);
+
+fwrite(fid, hex2dec('c6912702'), 'uint32');   % magic
+fwrite(fid, 2, 'int16');                       % main version (>1)
+fwrite(fid, 0, 'int16');                       % secondary version
+fwrite(fid, Fs, 'single');                     % sample_rate
+fwrite(fid, 1, 'int16');                        % dsp_enabled
+fwrite(fid, [1 1 7500], 'single');              % actual dsp cutoff, lower, upper bw
+fwrite(fid, [1 1 7500], 'single');              % desired dsp cutoff, lower, upper bw
+fwrite(fid, 0, 'int16');                        % notch_filter_mode
+fwrite(fid, [1000 1000], 'single');             % desired/actual impedance test freq
+writeQString(fid, '');                          % note1
+writeQString(fid, '');                          % note2
+writeQString(fid, '');                          % note3
+fwrite(fid, 0, 'int16');                        % num_temp_sensor_channels
+fwrite(fid, 0, 'int16');                        % board_mode
+writeQString(fid, '');                          % reference_channel (v>1)
+
+fwrite(fid, 1, 'int16');                        % number_of_signal_groups
+writeQString(fid, 'PortA');                     % group name
+writeQString(fid, 'A');                         % group prefix
+fwrite(fid, 1, 'int16');                        % group enabled
+fwrite(fid, numAmp + 1, 'int16');               % group num channels
+fwrite(fid, numAmp, 'int16');                   % group num amp channels
+for c = 1:numAmp
+    writeChannel(fid, sprintf('A-%03d', c-1), sprintf('amp%d', c-1), c-1, 0);
+end
+writeChannel(fid, 'DIN-00', 'din0', 0, 4);      % dig-in, native_order 0
+
+fclose(fid);   % header only - no data blocks follow
+end
+
+
+function writeDat(ffn, data, prec)
+%writeDat  Write a flat little-endian binary .dat file (split-format data file).
+fid = fopen(ffn, 'w', 'ieee-le');
+assert(fid >= 0, 'cannot open %s', ffn);
+fwrite(fid, data, prec);
+fclose(fid);
 end
 
 

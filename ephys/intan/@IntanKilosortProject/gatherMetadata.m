@@ -3,16 +3,21 @@ function T = gatherMetadata(obj, opts)
 %   T = P.gatherMetadata() calls refreshMetadata on each dataset (header-only;
 %   no amplifier data is read) and returns a table with one row per dataset:
 %     Name, Folder, NumFiles, NumChannels, Fs, Duration, AcqDate,
-%     ChannelNames, HasProbe, BinExists
+%     ChannelNames, HasProbe, BinExists, HasKilosort
+%
+%   HasProbe/BinExists test the dataset's assigned probe and canonical .bin
+%   path; HasKilosort comes from the dataset's DatasetTracker (true when any
+%   kilosort4 run under its output folder produced spike results).
 %
 %   T = P.gatherMetadata(Force=true) re-parses even datasets that already have
 %   metadata.
 %
-%   See also IntanDataset.refreshMetadata, IntanKilosortProject.discover.
+%   See also IntanDataset.refreshMetadata, IntanDataset.tracker,
+%   IntanKilosortProject.discover.
 
 arguments
     obj (1,1) IntanKilosortProject
-    opts.Force (1,1) logical = false %#ok<INUSA>
+    opts.Force (1,1) logical = false
 end
 
 n = obj.NumDatasets;
@@ -32,6 +37,7 @@ AcqDate     = NaT(n, 1);
 ChannelNames = cell(n, 1);
 HasProbe    = false(n, 1);
 BinExists   = false(n, 1);
+HasKilosort = false(n, 1);
 
 for i = 1:n
     d = obj.Datasets(i);
@@ -48,8 +54,9 @@ for i = 1:n
     ChannelNames{i} = d.ChannelNames;
     HasProbe(i)    = d.ProbeFile ~= "" && isfile(d.ProbeFile);
     BinExists(i)   = isfile(d.BinFile);
+    HasKilosort(i) = d.tracker().hasKilosort();
 end
 
 T = table(Name, Folder, NumFiles, NumChannels, Fs, Duration, AcqDate, ...
-    ChannelNames, HasProbe, BinExists);
+    ChannelNames, HasProbe, BinExists, HasKilosort);
 end

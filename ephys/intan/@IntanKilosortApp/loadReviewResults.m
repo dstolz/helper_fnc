@@ -15,11 +15,23 @@ if isempty(folder)
     uialert(obj.Fig, "Select a Kilosort4 results folder first.", "Review");
     return
 end
-% Tolerate pointing at the dataset folder instead of its kilosort4/ subfolder.
-if ~isfile(fullfile(folder, 'params.py')) ...
-        && isfile(fullfile(folder, 'kilosort4', 'params.py'))
-    folder = fullfile(folder, 'kilosort4');
-    obj.ReviewFolderField.Value = folder;
+% Tolerate pointing at the dataset folder or the kilosort4 run folder instead of
+% the exact results dir. The SpikeInterface engine nests the phy output under
+% kilosort4/si/sorter_output; the legacy engine writes it into kilosort4/
+% directly. Probe a few candidate subpaths for params.py.
+if ~isfile(fullfile(folder, 'params.py'))
+    candidates = { ...
+        fullfile(folder, 'kilosort4', 'si', 'sorter_output'), ...
+        fullfile(folder, 'si', 'sorter_output'), ...
+        fullfile(folder, 'sorter_output'), ...
+        fullfile(folder, 'kilosort4') };
+    for ci = 1:numel(candidates)
+        if isfile(fullfile(candidates{ci}, 'params.py'))
+            folder = candidates{ci};
+            obj.ReviewFolderField.Value = folder;
+            break
+        end
+    end
 end
 if ~isfolder(folder)
     uialert(obj.Fig, sprintf("Not a folder:\n%s", folder), "Review");
@@ -141,6 +153,10 @@ try
     fillSummary(obj, R);
     fillUnitsTable(obj, R);
     obj.renderReviewPlots();
+
+    obj.setStatus(sprintf("Loaded results: %d unit(s) (good %d, mua %d).", ...
+        numel(R.clusterID), R.nGood, R.nMua), ...
+        "Click a unit row to focus its waveform and stats.");
 catch ME
     closeIfValid(dlg);
     uialert(obj.Fig, sprintf("Failed to load results:\n%s", ME.message), "Review");

@@ -20,13 +20,15 @@ cg.ColumnWidth = {'fit', '1x'};
 
 row = 1;
 lab(cg, "Dataset:", row);
-obj.VizDatasetDropDown = uidropdown(cg, "Items", {'(scan first)'}, ...
-    "ValueChangedFcn", @(~,~) obj.populateVizFiles());
+obj.VizDatasetDropDown = uidropdown(cg);
+obj.VizDatasetDropDown.Items = {'(scan first)'};
+obj.VizDatasetDropDown.ValueChangedFcn = @(~,~) obj.populateVizFiles();
 obj.VizDatasetDropDown.Layout.Row = row; obj.VizDatasetDropDown.Layout.Column = 2;
 
 row = row + 1;
 lab(cg, "File:", row);
-obj.VizFileDropDown = uidropdown(cg, "Items", {'(all)'});
+obj.VizFileDropDown = uidropdown(cg);
+obj.VizFileDropDown.Items = {'(all)'};
 obj.VizFileDropDown.Layout.Row = row; obj.VizFileDropDown.Layout.Column = 2;
 
 row = row + 1;
@@ -65,9 +67,10 @@ obj.VizOrderField.Layout.Row = row; obj.VizOrderField.Layout.Column = 2;
 
 row = row + 1;
 lab(cg, "Reference:", row);
-obj.VizRefDropDown = uidropdown(cg, ...
-    "Items", {'None', 'Common average (mean)', 'Common median'}, ...
-    "ItemsData", {'none', 'car', 'cmr'}, "Value", 'none');
+obj.VizRefDropDown = uidropdown(cg);
+obj.VizRefDropDown.Items = {'None', 'Common average (mean)', 'Common median'};
+obj.VizRefDropDown.ItemsData = {'none', 'car', 'cmr'};
+obj.VizRefDropDown.Value = 'none';
 obj.VizRefDropDown.Layout.Row = row; obj.VizRefDropDown.Layout.Column = 2;
 
 row = row + 1;
@@ -76,9 +79,11 @@ obj.VizDetrendCheckBox.Layout.Row = row; obj.VizDetrendCheckBox.Layout.Column = 
 
 row = row + 1;
 lab(cg, "Plot type:", row);
-obj.VizModeDropDown = uidropdown(cg, ...
-    "Items", {'Traces', 'Heatmap'}, "ItemsData", {'traces', 'heatmap'}, ...
-    "Value", 'traces', "ValueChangedFcn", @(~,~) obj.onVizModeChanged());
+obj.VizModeDropDown = uidropdown(cg);
+obj.VizModeDropDown.Items = {'Traces', 'Heatmap'};
+obj.VizModeDropDown.ItemsData = {'traces', 'heatmap'};
+obj.VizModeDropDown.Value = 'traces';
+obj.VizModeDropDown.ValueChangedFcn = @(~,~) obj.onVizModeChanged();
 obj.VizModeDropDown.Layout.Row = row; obj.VizModeDropDown.Layout.Column = 2;
 
 row = row + 1;
@@ -88,9 +93,10 @@ obj.VizSpacingField.Layout.Row = row; obj.VizSpacingField.Layout.Column = 2;
 
 row = row + 1;
 lab(cg, "Heatmap colors:", row);
-obj.VizColormapDropDown = uidropdown(cg, ...
-    "Items", {'turbo', 'parula', 'hot', 'gray', 'jet'}, "Value", 'turbo', ...
-    "ValueChangedFcn", @(~,~) obj.onVizColormapChanged());
+obj.VizColormapDropDown = uidropdown(cg);
+obj.VizColormapDropDown.Items = {'turbo', 'parula', 'hot', 'gray', 'jet'};
+obj.VizColormapDropDown.Value = 'turbo';
+obj.VizColormapDropDown.ValueChangedFcn = @(~,~) obj.onVizColormapChanged();
 obj.VizColormapDropDown.Layout.Row = row; obj.VizColormapDropDown.Layout.Column = 2;
 
 row = row + 1;

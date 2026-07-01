@@ -1,31 +1,31 @@
 function buildKilosortTab(obj)
-%buildKilosortTab  Kilosort4 / .bin configuration, save/load, and batch run.
-%   The full Kilosort4 parameter set is built from kilosortParamSpec(), laid out
-%   two parameters per row in a wide, scrollable configuration panel, and stored
-%   in obj.ParamControls keyed by KS4 settings name. No MATLAB-side filtering is
-%   offered: the .bin is written broadband and KS4 filters internally (see the
-%   highpass_cutoff parameter).
+%buildKilosortTab  SpikeInterface preprocessing + Kilosort4 config + batch run.
+%   The recording is converted for Kilosort4 through SpikeInterface
+%   (read_intan -> attach probe -> preprocessing -> run_sorter); there is no
+%   MATLAB-side .bin. The left panel exposes the connection paths, the
+%   SpikeInterface preprocessing chain (bad-channel detection, artifact
+%   silencing, optional common reference / bandpass filter), and the full
+%   Kilosort4 parameter set from kilosortParamSpec(). Kilosort4 still high-pass
+%   filters and whitens internally, so the SI bandpass is off by default.
 
 spec = obj.kilosortParamSpec();
 groups = unique({spec.group}, 'stable');
 
-% Row budget: connection (Python/Conda/Output/Phy) + ".bin writing" header +
-% Scale/Dtype row + blank-artifacts checkbox + per group [header + ceil(nParams/2) rows] + JSON + buttons.
-nRows = 7;
+% Row budget (over-estimated; extra rows are harmless scroll space, under-sizing
+% errors): connection (4) + preprocessing header + 6 rows + per group
+% [header + ceil(nParams/2)] + JSON + buttons + slack.
+nRows = 12;
 for gi = 1:numel(groups)
     np = sum(strcmp({spec.group}, groups{gi}));
     nRows = nRows + 1 + ceil(np / 2);
 end
-nRows = nRows + 2;
+nRows = nRows + 5;
 
 g = uigridlayout(obj.TabKilosort, [1 2]);
 g.ColumnWidth = {720, '1x'};
 g.Padding     = [10 10 10 10];
 
 % =================== left column: configuration ===================
-% Fixed pixel row heights + a scrollable grid: with 'fit' rows the grid sizes
-% itself to the panel and clips; fixed heights let the content overflow so the
-% scrollbar appears. Columns: labelA | controlA | labelB | controlB | browse.
 cfg = uipanel(g, "Title", "Configuration");
 cfg.Layout.Column = 1;
 cg = uigridlayout(cfg, [nRows 5]);
@@ -35,15 +35,16 @@ cg.ColumnWidth = {150, '1x', 150, '1x', 30};
 
 r = 1;
 lab(cg, "Python exe:", r);
-obj.PythonExeField = uieditfield(cg, "text", "Placeholder", "python.exe (or conda base python)");
+obj.PythonExeField = uieditfield(cg, "text", "Placeholder", "kilosort env python.exe");
 obj.PythonExeField.Layout.Row = r; obj.PythonExeField.Layout.Column = [2 4];
 obj.BrowsePythonButton = uibutton(cg, "Text", "...", ...
     "ButtonPushedFcn", @(~,~) obj.onBrowsePython());
 obj.BrowsePythonButton.Layout.Row = r; obj.BrowsePythonButton.Layout.Column = 5;
 
 r = r + 1;
-lab(cg, "Conda env:", r);
-obj.CondaEnvField = uieditfield(cg, "text", "Placeholder", "optional (uses 'conda run -n')");
+l = lab(cg, "Conda env:", r);
+l.Tooltip = "Optional. When set, the pipeline runs via 'conda run -n <env>'. Leave blank if the Python exe above is already the kilosort env python.";
+obj.CondaEnvField = uieditfield(cg, "text", "Placeholder", "optional (e.g. kilosort)");
 obj.CondaEnvField.Layout.Row = r; obj.CondaEnvField.Layout.Column = [2 5];
 
 r = r + 1;
@@ -60,25 +61,82 @@ l.Tooltip = "Command used to launch phy (e.g. 'phy', 'conda run -n phy2 phy', or
 obj.PhyCmdField = uieditfield(cg, "text", "Placeholder", "phy (or 'conda run -n phy2 phy')");
 obj.PhyCmdField.Layout.Row = r; obj.PhyCmdField.Layout.Column = [2 5];
 
-% --- .bin writing (no filtering: KS4 filters internally) ---
+% --- Preprocessing (SpikeInterface) ---
 r = r + 1;
-sep(cg, ".bin writing (broadband, no MATLAB filtering)", r);
+sep(cg, "Preprocessing (SpikeInterface) - KS4 still filters + whitens internally", r);
 
 r = r + 1;
-lab(cg, "Scale:", r);
-obj.ScaleField = uieditfield(cg, "numeric", "Value", 1/0.195);
-obj.ScaleField.Layout.Row = r; obj.ScaleField.Layout.Column = 2;
-l = lab(cg, "Dtype:", r); l.Layout.Column = 3;
-obj.DtypeDropDown = uidropdown(cg, "Items", {'int16','uint16','int32','single'}, "Value", "int16");
-obj.DtypeDropDown.Layout.Row = r; obj.DtypeDropDown.Layout.Column = 4;
+obj.SIDetectBadCheckBox = uicheckbox(cg, "Text", "Detect bad channels (auto)", ...
+    "Value", true, "Tooltip", ...
+    ["Run spikeinterface.detect_bad_channels and drop dead/noisy channels " ...
+     "before sorting. Detected channels are unioned with the manual Exclude list."], ...
+    "ValueChangedFcn", @(~,~) obj.onSIControlsChanged());
+obj.SIDetectBadCheckBox.Layout.Row = r; obj.SIDetectBadCheckBox.Layout.Column = [1 2];
+l = lab(cg, "Action:", r); l.Layout.Column = 3;
+
+
+
+
+
+obj.SIBadActionDropDown = uidropdown(cg);
+obj.SIBadActionDropDown.Items = ["remove", "interpolate"];
+obj.SIBadActionDropDown.Value = "remove";
+set(obj.SIBadActionDropDown, "Tooltip", ...
+    "Remove bad channels from the probe, or interpolate them from neighbours.", ...
+    "ValueChangedFcn", @(~,~) obj.onSIControlsChanged());
+obj.SIBadActionDropDown.Layout.Row = r; obj.SIBadActionDropDown.Layout.Column = 4;
 
 r = r + 1;
-obj.ArtEnableCheckBox = uicheckbox(cg, "Text", "Blank artifacts in .bin", ...
-    "Value", false, "Tooltip", ...
-    ["When on, detected artifacts are zeroed on every channel as the Kilosort " ...
-     ".bin is written for this and every scanned dataset."], ...
+lab(cg, "Detector method:", r);
+obj.SIBadMethodDropDown = uidropdown(cg);
+obj.SIBadMethodDropDown.Items = ["coherence+psd", "std", "mad", "neighborhood_r2"];
+obj.SIBadMethodDropDown.Value = "coherence+psd";
+obj.SIBadMethodDropDown.Tooltip = "spikeinterface.detect_bad_channels method.";
+obj.SIBadMethodDropDown.ValueChangedFcn = @(~,~) obj.onSIControlsChanged();
+obj.SIBadMethodDropDown.Layout.Row = r; obj.SIBadMethodDropDown.Layout.Column = [2 4];
+
+r = r + 1;
+% Reuse ArtifactConfig.Enabled: this master toggle gates AUTO artifact
+% detection; manual (Visualize-tab) periods are always silenced. Tune the
+% detector on the Artifacts tab.
+obj.ArtEnableCheckBox = uicheckbox(cg, "Text", ...
+    "Silence artifacts (manual always; auto-detect when ticked)", ...
+    "Value", true, "Tooltip", ...
+    ["Zero flagged spans in the SpikeInterface recording (silence_periods). " ...
+     "Manual periods marked on the Visualize tab are always silenced; ticking " ...
+     "this also runs the Artifacts-tab detector over the recording."], ...
     "ValueChangedFcn", @(~,~) obj.onArtifactControlsChanged());
 obj.ArtEnableCheckBox.Layout.Row = r; obj.ArtEnableCheckBox.Layout.Column = [1 5];
+
+r = r + 1;
+obj.SICommonRefCheckBox = uicheckbox(cg, "Text", "Common reference (CMR/CAR)", ...
+    "Value", false, "Tooltip", ...
+    "Apply spikeinterface.common_reference across channels before sorting.", ...
+    "ValueChangedFcn", @(~,~) obj.onSIControlsChanged());
+obj.SICommonRefCheckBox.Layout.Row = r; obj.SICommonRefCheckBox.Layout.Column = [1 2];
+l = lab(cg, "Operator:", r); l.Layout.Column = 3;
+obj.SIRefOperatorDropDown = uidropdown(cg);
+obj.SIRefOperatorDropDown.Items = ["median", "average"];
+obj.SIRefOperatorDropDown.Value = "median";
+obj.SIRefOperatorDropDown.ValueChangedFcn = @(~,~) obj.onSIControlsChanged();
+obj.SIRefOperatorDropDown.Layout.Row = r; obj.SIRefOperatorDropDown.Layout.Column = 4;
+
+r = r + 1;
+obj.SIFilterCheckBox = uicheckbox(cg, "Text", ...
+    "Bandpass filter in SpikeInterface (off = let KS4 filter)", ...
+    "Value", false, "Tooltip", ...
+    ["Filter in SpikeInterface instead of relying on KS4's internal high-pass. " ...
+     "Off by default to avoid double-filtering."], ...
+    "ValueChangedFcn", @(~,~) obj.onSIControlsChanged());
+obj.SIFilterCheckBox.Layout.Row = r; obj.SIFilterCheckBox.Layout.Column = [1 5];
+
+r = r + 1;
+lab(cg, "Filter min (Hz):", r);
+obj.SIFilterMinField = uieditfield(cg, "numeric", "Value", 300, "Limits", [0 Inf]);
+obj.SIFilterMinField.Layout.Row = r; obj.SIFilterMinField.Layout.Column = 2;
+l = lab(cg, "Filter max (Hz):", r); l.Layout.Column = 3;
+obj.SIFilterMaxField = uieditfield(cg, "numeric", "Value", 6000, "Limits", [0 Inf]);
+obj.SIFilterMaxField.Layout.Row = r; obj.SIFilterMaxField.Layout.Column = 4;
 
 % --- Kilosort4 parameters (from kilosortParamSpec), two per row ---
 obj.ParamControls = struct();
@@ -123,6 +181,11 @@ obj.LoadConfigButton = uibutton(cg, "Text", "Load config...", ...
     "ButtonPushedFcn", @(~,~) obj.onLoadConfig());
 obj.LoadConfigButton.Layout.Row = r; obj.LoadConfigButton.Layout.Column = 4;
 
+r = r + 1;
+obj.KSDocsButton = uibutton(cg, "Text", "Kilosort4 parameter docs...", ...
+    "ButtonPushedFcn", @(~,~) web("https://kilosort.readthedocs.io/en/latest/parameters.html", "-browser"));
+obj.KSDocsButton.Layout.Row = r; obj.KSDocsButton.Layout.Column = [2 4];
+
 % =================== right column: batch run + log ===================
 runPanel = uipanel(g, "Title", "Batch processing");
 runPanel.Layout.Column = 2;
@@ -131,26 +194,22 @@ rg.RowHeight   = {'fit', 'fit', 'fit', 'fit', 'fit', '1x'};
 rg.ColumnWidth = {'fit', 'fit', '1x'};
 
 lab(rg, "Execution:", 1);
-obj.ExecModeDropDown = uidropdown(rg, ...
-    "Items", {'Non-blocking (background)', 'Blocking (wait)'}, ...
-    "ItemsData", {false, true}, "Value", false);
+obj.ExecModeDropDown = uidropdown(rg);
+obj.ExecModeDropDown.Items = {'Non-blocking (background)', 'Blocking (wait)'};
+obj.ExecModeDropDown.ItemsData = {false, true};
+obj.ExecModeDropDown.Value = false;
 obj.ExecModeDropDown.Layout.Row = 1; obj.ExecModeDropDown.Layout.Column = [2 3];
 
-obj.DryRunCheckBox = uicheckbox(rg, "Text", "Dry run (write KS4 script + settings, do not spawn)");
+obj.DryRunCheckBox = uicheckbox(rg, "Text", ...
+    "Dry run (write si_config.json + run_si_ks4.py, do not spawn)");
 obj.DryRunCheckBox.Layout.Row = 2; obj.DryRunCheckBox.Layout.Column = [1 3];
 
-obj.WriteBinButton = uibutton(rg, "Text", "Write .bin (selected)", ...
-    "ButtonPushedFcn", @(~,~) obj.onRunBatch("bin"));
-obj.WriteBinButton.Layout.Row = 3; obj.WriteBinButton.Layout.Column = 1;
-
 obj.RunKilosortButton = uibutton(rg, "Text", "Run Kilosort4 (selected)", ...
-    "ButtonPushedFcn", @(~,~) obj.onRunBatch("kilosort"));
-obj.RunKilosortButton.Layout.Row = 3; obj.RunKilosortButton.Layout.Column = 2;
+    "ButtonPushedFcn", @(~,~) obj.onRunBatch("kilosort"), ...
+    "Tooltip", "Convert with SpikeInterface and run Kilosort4 on the selected datasets.");
+obj.RunKilosortButton.Layout.Row = 3; obj.RunKilosortButton.Layout.Column = [1 2];
 
-obj.LaunchPhyButton = uibutton(rg, "Text", "Open in phy (selected)", ...
-    "ButtonPushedFcn", @(~,~) obj.onLaunchPhy());
-obj.LaunchPhyButton.Layout.Row = 4; obj.LaunchPhyButton.Layout.Column = [1 2];
-obj.LaunchPhyButton.Tooltip = "Launch phy template-gui on the selected dataset's kilosort4 results.";
+% "Open in phy" lives on the Datasets tab (it acts on the selected row).
 
 obj.KSProgressLabel = uilabel(rg, "Text", "Idle. Tick datasets in the Datasets tab (or none = all).", ...
     "FontColor", [0.4 0.4 0.4]);
@@ -158,6 +217,8 @@ obj.KSProgressLabel.Layout.Row = 5; obj.KSProgressLabel.Layout.Column = [1 3];
 
 obj.KSLogArea = uitextarea(rg, "Editable", "off");
 obj.KSLogArea.Layout.Row = 6; obj.KSLogArea.Layout.Column = [1 3];
+
+obj.syncSIEnableStates();
 end
 
 

@@ -16,7 +16,10 @@ d = obj.currentDataset();
 exclude = double.empty(1,0);
 if ~isempty(d); exclude = IntanDataset.parseChannelList(d.ExcludeChannels); end
 
-plotProbeArrangement(obj.ProbePreviewAxes, pf, exclude);
+showNumbers = ~isempty(obj.ShowChanNumbersCheckBox) ...
+    && isvalid(obj.ShowChanNumbersCheckBox) ...
+    && logical(obj.ShowChanNumbersCheckBox.Value);
+plotProbeArrangement(obj.ProbePreviewAxes, pf, exclude, showNumbers);
 [~, pn, pe] = fileparts(pf);
 obj.ProbeInfoLabel.Text = sprintf("%s%s\nn_chan: %s\n%s", pn, pe, ...
     num2str(nProbe), info);
@@ -59,11 +62,13 @@ catch ME
     info = "invalid JSON: " + string(ME.message);
     return
 end
-if isfield(probe, 'n_chan')
-    n = probe.n_chan;
-elseif isfield(probe, 'chanMap')
-    n = numel(probe.chanMap);
-end
+% A chanMap can never have more sites than total channels, so an n_chan that
+% is missing or smaller than numel(chanMap) (e.g. written from a 0-based map's
+% max index) is bogus -- fall back to the map length.
+nMap = NaN;
+if isfield(probe, 'chanMap'); nMap = numel(probe.chanMap); end
+if isfield(probe, 'n_chan');  n = double(probe.n_chan);     end
+if ~isnan(nMap); n = max([n, nMap], [], 'omitnan'); end
 parts = strings(0,1);
 if isfield(probe, 'chanMap'); parts(end+1) = "chanMap: " + numel(probe.chanMap); end
 if isfield(probe, 'kcoords')
@@ -73,10 +78,12 @@ info = strjoin(parts, "  |  ");
 end
 
 
-function plotProbeArrangement(ax, pf, exclude)
+function plotProbeArrangement(ax, pf, exclude, showNumbers)
 %plotProbeArrangement  Scatter the probe sites (xc/yc), colored by shank.
 %   EXCLUDE (1-based .bin channels) marks dropped sites with a gray X.
+%   SHOWNUMBERS (default false) labels each site with its 1-based .bin channel.
 if nargin < 3; exclude = double.empty(1,0); end
+if nargin < 4; showNumbers = false; end
 cla(ax);
 try
     probe = jsondecode(fileread(pf));
@@ -122,6 +129,15 @@ end
 if any(isExcl)
     scatter(ax, xc(isExcl), yc(isExcl), 48, [0.5 0.5 0.5], "x", ...
         "LineWidth", 1.5, "DisplayName", "excluded");
+end
+
+% Optional per-site channel-number labels (1-based .bin channel), offset a
+% touch to the right of each marker so they don't sit on top of it.
+if showNumbers
+    dx = 0.02 * max(max(xc) - min(xc), 1);
+    text(ax, xc + dx, yc, string(binCh), "FontSize", 7, ...
+        "Color", [0.15 0.15 0.15], "Clipping", "on", ...
+        "HorizontalAlignment", "left", "VerticalAlignment", "middle");
 end
 hold(ax, "off");
 

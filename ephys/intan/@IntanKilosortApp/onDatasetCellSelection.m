@@ -22,4 +22,7 @@ obj.syncExcludeField();
 
 % Refresh the probe channel-count check against the newly selected dataset.
 obj.onProbeSelected();
+
+% Enable/disable "Open in phy" for the newly selected dataset.
+obj.updatePhyButtonState();
 end

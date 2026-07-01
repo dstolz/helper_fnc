@@ -132,13 +132,13 @@ stdoutLog    = fullfile(resultsDir, 'ks4_run.log');
 statusFile   = fullfile(resultsDir, 'ks4_status.json');
 
 writeSettings(settings, settingsPath);
-writeRunScript(scriptPath, settingsPath);
+writeRunScript(scriptPath);
 
 % Build command (absolute, double-quoted paths everywhere)
 if condaEnv ~= ""
-    command = sprintf('conda run -n %s "%s" "%s"', condaEnv, pythonExe, scriptPath);
+    command = sprintf('conda run -n %s "%s" "%s" "%s"', condaEnv, pythonExe, scriptPath, settingsPath);
 else
-    command = sprintf('"%s" "%s"', pythonExe, scriptPath);
+    command = sprintf('"%s" "%s" "%s"', pythonExe, scriptPath, settingsPath);
 end
 
 result = struct();
@@ -206,12 +206,16 @@ end
 
 function bg = backgroundCommand(command, logFile)
 %backgroundCommand  Wrap COMMAND to run detached with output redirected to LOG.
+%   PYTHONUNBUFFERED=1 forces unbuffered stdout/stderr; without it, Python
+%   fully block-buffers when writing to a redirected file (not a TTY), so
+%   ks4_run.log stays empty until the process exits and the live tail in
+%   pollKSRuns has nothing to show.
 log = char(logFile);
 if ispc
     % start returns immediately; cmd /s /c keeps the inner quotes verbatim.
-    bg = sprintf('start "Kilosort4" /min cmd /s /c "%s 1> "%s" 2>&1"', command, log);
+    bg = sprintf('start "Kilosort4" /min cmd /s /c "set PYTHONUNBUFFERED=1&& %s 1> "%s" 2>&1"', command, log);
 else
-    bg = sprintf('%s > "%s" 2>&1 &', command, log);
+    bg = sprintf('PYTHONUNBUFFERED=1 %s > "%s" 2>&1 &', command, log);
 end
 end
 
@@ -283,9 +287,12 @@ catch ME
         'Probe file is not valid JSON: %s (%s)', probeFile, ME.message);
 end
 nProbe = NaN;
-if isfield(probe, 'n_chan');      nProbe = probe.n_chan;
-elseif isfield(probe, 'chanMap'); nProbe = numel(probe.chanMap);
-end
+% n_chan, but never fewer than the mapped sites: an n_chan written from a
+% 0-based map's max index is one short of numel(chanMap); prefer the map.
+nMap = NaN;
+if isfield(probe, 'chanMap'); nMap = numel(probe.chanMap); end
+if isfield(probe, 'n_chan');  nProbe = double(probe.n_chan); end
+if ~isnan(nMap); nProbe = max([nProbe, nMap], [], 'omitnan'); end
 if ~isnan(nProbe) && nProbe ~= nChanBin
     warning('IntanDataset:runKilosort:ProbeChannelMismatch', ...
         'Probe channel count (%d) differs from n_chan_bin (%d).', nProbe, nChanBin);
@@ -363,59 +370,15 @@ fclose(fid);
 end
 
 
-function writeRunScript(scriptPath, settingsPath)
-% Generate run_ks4.py. Use a raw string for the settings path (Windows-safe).
-sp = strrep(char(settingsPath), '\', '/');
-lines = [
-    "import json"
-    "import os"
-    "import traceback"
-    "from kilosort import run_kilosort"
-    "from kilosort.io import load_probe"
-    ""
-    "SETTINGS_PATH = r""" + sp + """"
-    ""
-    "with open(SETTINGS_PATH, 'r') as f:"
-    "    cfg = json.load(f)"
-    ""
-    "status_path = os.path.join(cfg['results_dir'], 'ks4_status.json')"
-    ""
-    "probe = load_probe(cfg['probe'])"
-    "settings = {"
-    "    'n_chan_bin': cfg['n_chan_bin'],"
-    "    'fs': cfg['fs'],"
-    "    'filename': cfg['filename'],"
-    "    'results_dir': cfg['results_dir'],"
-    "}"
-    "# carry any extra settings provided by MATLAB"
-    "for k, v in cfg.items():"
-    "    if k not in ('probe', 'data_dtype'):"
-    "        settings[k] = v"
-    ""
-    "try:"
-    "    run_kilosort("
-    "        settings=settings,"
-    "        probe=probe,"
-    "        filename=cfg['filename'],"
-    "        data_dtype=cfg['data_dtype'],"
-    "        results_dir=cfg['results_dir'],"
-    "    )"
-    "    with open(status_path, 'w') as f:"
-    "        json.dump({'state': 'done'}, f)"
-    "    print('KILOSORT4_DONE')"
-    "except Exception as e:"
-    "    with open(status_path, 'w') as f:"
-    "        json.dump({'state': 'error', 'message': str(e),"
-    "                   'traceback': traceback.format_exc()}, f)"
-    "    print('KILOSORT4_ERROR')"
-    "    raise"
-    ];
-txt = strjoin(lines, newline);
-fid = fopen(scriptPath, 'w');
-if fid < 0
-    error('IntanDataset:runKilosort:ScriptWriteFailed', ...
-        'Could not write %s', scriptPath);
+function writeRunScript(scriptPath)
+%writeRunScript  Copy the checked-in run_ks4.py driver to scriptPath.
+%   The script itself lives alongside this .m file (fully self-contained: it
+%   reads the settings.json path from argv[1]); we just stage a copy next to
+%   each run's settings for provenance.
+template = fullfile(fileparts(mfilename('fullpath')), 'run_ks4.py');
+if ~isfile(template)
+    error('IntanDataset:runKilosort:ScriptMissing', ...
+        'Could not find %s', template);
 end
-fwrite(fid, txt, 'char');
-fclose(fid);
+copyfile(template, scriptPath, 'f');
 end

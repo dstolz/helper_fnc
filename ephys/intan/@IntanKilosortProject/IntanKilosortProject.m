@@ -83,15 +83,16 @@ classdef IntanKilosortProject < handle
         function discover(obj)
             %discover  Find every folder under Root containing >=1 *.rhd file.
             %   One IntanDataset is created per folder with AutoMetadata=false
-            %   (cheap); shared config is pushed into each.
-            D = dir(fullfile(obj.Root, '**', '*.rhd'));
-            if isempty(D)
+            %   (cheap); shared config is pushed into each. Folder discovery is
+            %   delegated to DatasetTracker.findRecordingFolders so the project
+            %   and DatasetTracker agree on what counts as a recording.
+            folders = DatasetTracker.findRecordingFolders(obj.Root, true);
+            if isempty(folders)
                 obj.Datasets = IntanDataset.empty(1,0);
                 warning('IntanKilosortProject:NoData', ...
                     'No *.rhd files found under %s', obj.Root);
                 return
             end
-            folders = unique(string({D.folder}), 'stable');
 
             ds = IntanDataset.empty(1, 0);
             for i = 1:numel(folders)
@@ -140,6 +141,18 @@ classdef IntanKilosortProject < handle
                 end
                 d = obj.Datasets(ix);
             end
+        end
+
+        function dt = tracker(obj, idxOrName)
+            %tracker  DatasetTracker inventory for one dataset (by index or Name).
+            %   Convenience wrapper over IntanDataset.tracker so GUIs/scripts can
+            %   ask the project for a dataset's *.bin / probe / kilosort4
+            %   inventory in one call. See also IntanDataset.tracker, DATASETTRACKER.
+            arguments
+                obj (1,1) IntanKilosortProject
+                idxOrName
+            end
+            dt = obj.dataset(idxOrName).tracker();
         end
 
         function n = get.NumDatasets(obj)

@@ -45,10 +45,20 @@ title(obj.ProbePreviewAxes, "Channel arrangement");
 xlabel(obj.ProbePreviewAxes, "x (\mum)");
 ylabel(obj.ProbePreviewAxes, "y (\mum)");
 
-% Row 3: import
+% Row 3: import / edit + channel-number toggle for the preview plot
 obj.ImportProbeButton = uibutton(g, "Text", "Import probe .json into folder...", ...
     "ButtonPushedFcn", @(~,~) obj.onImportProbe());
-obj.ImportProbeButton.Layout.Row = 3; obj.ImportProbeButton.Layout.Column = [1 2];
+obj.ImportProbeButton.Layout.Row = 3; obj.ImportProbeButton.Layout.Column = 1;
+
+obj.EditProbeJSONButton = uibutton(g, "Text", "Edit probe .json...", ...
+    "ButtonPushedFcn", @(~,~) obj.onEditProbeJSON());
+obj.EditProbeJSONButton.Layout.Row = 3; obj.EditProbeJSONButton.Layout.Column = 2;
+
+obj.ShowChanNumbersCheckBox = uicheckbox(g, "Text", "Show channel numbers", ...
+    "Value", false, ...
+    "Tooltip", "Label each probe site with its 1-based .bin channel number.", ...
+    "ValueChangedFcn", @(~,~) obj.onProbeSelected());
+obj.ShowChanNumbersCheckBox.Layout.Row = 3; obj.ShowChanNumbersCheckBox.Layout.Column = [3 4];
 
 % Row 4: per-recording channel exclusions (dropped from KS4 sorting, may
 % differ across recordings). Reflects the active dataset; Apply writes it back.
@@ -61,13 +71,6 @@ obj.ExcludeChannelsField = uieditfield(g, "text", ...
     "ValueChangedFcn", @(~,~) obj.onApplyExclude("selected"));
 obj.ExcludeChannelsField.Layout.Row = 4; obj.ExcludeChannelsField.Layout.Column = 2;
 
-obj.ApplyExcludeSelectedButton = uibutton(g, "Text", "Apply to selected", ...
-    "ButtonPushedFcn", @(~,~) obj.onApplyExclude("selected"));
-obj.ApplyExcludeSelectedButton.Layout.Row = 4; obj.ApplyExcludeSelectedButton.Layout.Column = 3;
-
-obj.ApplyExcludeAllButton = uibutton(g, "Text", "Apply to all", ...
-    "ButtonPushedFcn", @(~,~) obj.onApplyExclude("all"));
-obj.ApplyExcludeAllButton.Layout.Row = 4; obj.ApplyExcludeAllButton.Layout.Column = 4;
 
 % Row 5: assign
 obj.AssignSelectedButton = uibutton(g, "Text", "Assign to selected dataset", ...
