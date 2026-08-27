@@ -3,23 +3,28 @@ function refreshDatasetsTable(obj)
 %   Preserves the existing "Select" ticks where the row count is unchanged.
 
 if isempty(obj.Project) || obj.Project.NumDatasets == 0
-    obj.DatasetsTable.Data = table('Size', [0 11], ...
+    obj.DatasetsTable.Data = table('Size', [0 12], ...
         'VariableTypes', {'logical','string','string','double','double', ...
                           'double','double','string','string','string', ...
-                          'string'}, ...
+                          'string','double'}, ...
         'VariableNames', {'Select','Name','AcqDate','NumFiles','NumChannels', ...
                           'Fs','DurationMin','Format','Probe','Exclude', ...
-                          'Kilosort'});
+                          'Kilosort','DatasetIdx'});
     return
 end
 
 n = obj.Project.NumDatasets;
 
-% Preserve prior selection ticks when the row count matches.
+% Preserve prior selection ticks (matched by name, since sorting the table
+% may have reordered rows relative to the last refresh).
 prev = obj.DatasetsTable.Data;
 Select = false(n, 1);
-if istable(prev) && height(prev) == n && any(strcmp('Select', prev.Properties.VariableNames))
-    Select = logical(prev.Select(:));
+if istable(prev) && any(strcmp('Select', prev.Properties.VariableNames)) ...
+        && any(strcmp('Name', prev.Properties.VariableNames))
+    for i = 1:n
+        m = strcmp(prev.Name, obj.Project.Datasets(i).Name);
+        if any(m); Select(i) = prev.Select(find(m, 1)); end
+    end
 end
 
 Name        = strings(n, 1);
@@ -67,11 +72,16 @@ for i = 1:n
     end
 end
 
+% DatasetIdx records each row's position in obj.Project.Datasets so that row
+% -> dataset lookups (currentDataset, selectedDatasetIndices) stay correct
+% after the user sorts the table by clicking a column header.
+DatasetIdx = (1:n)';
+
 T = table(Select, Name, AcqDate, NumFiles, NumChannels, Fs, ...
-    round(DurationMin, 2), Format, Probe, Exclude, Kilosort, ...
+    round(DurationMin, 2), Format, Probe, Exclude, Kilosort, DatasetIdx, ...
     'VariableNames', {'Select','Name','AcqDate','NumFiles','NumChannels', ...
                       'Fs','DurationMin','Format','Probe','Exclude', ...
-                      'Kilosort'});
+                      'Kilosort','DatasetIdx'});
 obj.DatasetsTable.Data = T;
 
 % Keep "Open in phy" in sync with whatever is selected after the rebuild.

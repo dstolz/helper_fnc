@@ -236,6 +236,9 @@ def main():
         params, dropped = ks4_params(cfg)
         results_dir = cfg['results_dir']
         log('Running Kilosort4 via SpikeInterface -> %s' % results_dir)
+        # Keep the preprocessed recording.dat that KS4 writes during sorting
+        # (SI deletes it by default) so phy can display raw traces/waveforms.
+        params.setdefault('delete_recording_dat', False)
         sorting = si.run_sorter('kilosort4', rec, folder=results_dir,
                                 remove_existing_folder=True, verbose=True, **params)
         n_units = int(len(sorting.unit_ids))

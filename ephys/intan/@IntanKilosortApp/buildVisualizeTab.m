@@ -1,9 +1,9 @@
 function buildVisualizeTab(obj)
 %buildVisualizeTab  Controls + axes for fast, display-only time-domain plots.
 %   The Plot button reads the selected window once, applies any display-only
-%   preprocessing, and caches the result so the view can be panned, zoomed and
-%   scaled with the mouse without touching disk. See onPlotVisualization and
-%   renderViz.
+%   preprocessing, and hands the result to a MultiChannelViewer (obj.Viewer),
+%   which owns all pan/zoom/scale/channel-scroll navigation from there without
+%   touching disk. See onPlotVisualization and plotting/@MultiChannelViewer.
 
 g = uigridlayout(obj.TabVisualize, [1 2]);
 g.ColumnWidth = {320, '1x'};
@@ -13,17 +13,20 @@ g.Padding     = [10 10 10 10];
 ctrl = uipanel(g, "Title", "Display options (does not modify data)");
 ctrl.Layout.Column = 1;
 
-nRows = 20;
+nRows = 22;
 cg = uigridlayout(ctrl, [nRows 2]);
 cg.RowHeight   = [repmat({'fit'}, 1, nRows - 1), {'1x'}];
 cg.ColumnWidth = {'fit', '1x'};
 
 row = 1;
 lab(cg, "Dataset:", row);
-obj.VizDatasetDropDown = uidropdown(cg);
-obj.VizDatasetDropDown.Items = {'(scan first)'};
-obj.VizDatasetDropDown.ValueChangedFcn = @(~,~) obj.populateVizFiles();
-obj.VizDatasetDropDown.Layout.Row = row; obj.VizDatasetDropDown.Layout.Column = 2;
+% Read-only mirror of the figure's "Dataset" menu, which owns the selection
+% (see buildUI / populateDatasetMenu / selectDataset).
+obj.VizDatasetLabel = uilabel(cg, "WordWrap", "on", ...
+    "Text", "(none - scan, then pick from the Dataset menu)", ...
+    "FontColor", [0.5 0.5 0.5], ...
+    "Tooltip", "Choose the dataset from the Dataset menu in the menu bar.");
+obj.VizDatasetLabel.Layout.Row = row; obj.VizDatasetLabel.Layout.Column = 2;
 
 row = row + 1;
 lab(cg, "File:", row);
@@ -89,6 +92,7 @@ obj.VizModeDropDown.Layout.Row = row; obj.VizModeDropDown.Layout.Column = 2;
 row = row + 1;
 lab(cg, "Trace spacing (uV):", row);
 obj.VizSpacingField = uieditfield(cg, "numeric", "Value", 200, "Limits", [0 Inf]);
+obj.VizSpacingField.ValueChangedFcn = @(src,~) setViewerSpacing(obj, src.Value);
 obj.VizSpacingField.Layout.Row = row; obj.VizSpacingField.Layout.Column = 2;
 
 row = row + 1;
@@ -98,6 +102,24 @@ obj.VizColormapDropDown.Items = {'turbo', 'parula', 'hot', 'gray', 'jet'};
 obj.VizColormapDropDown.Value = 'turbo';
 obj.VizColormapDropDown.ValueChangedFcn = @(~,~) obj.onVizColormapChanged();
 obj.VizColormapDropDown.Layout.Row = row; obj.VizColormapDropDown.Layout.Column = 2;
+
+row = row + 1;
+obj.VizSortByProbeCheckBox = uicheckbox(cg, "Text", "Sort channels by probe map", ...
+    "Value", false, ...
+    "Tooltip", ["Display channels in probe shank/depth order (from the " ...
+        "dataset's assigned probe .json) instead of the order typed above. " ...
+        "Channels not found in the probe map are shown last, unchanged."], ...
+    "ValueChangedFcn", @(~,~) obj.applyVizChannelOrder());
+obj.VizSortByProbeCheckBox.Layout.Row = row; obj.VizSortByProbeCheckBox.Layout.Column = [1 2];
+
+row = row + 1;
+obj.VizColorByShankCheckBox = uicheckbox(cg, "Text", "Color channels by shank", ...
+    "Value", false, ...
+    "Tooltip", ["Color each trace by its probe shank (from the dataset's " ...
+        "assigned probe .json) instead of the default per-channel color " ...
+        "cycle. Channels not found in the probe map share a single color."], ...
+    "ValueChangedFcn", @(~,~) obj.applyVizChannelColor());
+obj.VizColorByShankCheckBox.Layout.Row = row; obj.VizColorByShankCheckBox.Layout.Column = [1 2];
 
 row = row + 1;
 obj.VizPlotButton = uibutton(cg, "Text", "Plot", ...
@@ -138,12 +160,19 @@ xlabel(obj.VizAxes, "Time (s)");
 ylabel(obj.VizAxes, "Channel (stacked, uV offset)");
 title(obj.VizAxes, "Time-domain preview  -  press Plot, then navigate with the mouse");
 
-% --- figure-level mouse / key navigation (guarded to the Visualize tab) ---
-obj.Fig.WindowScrollWheelFcn = @(~, evt) obj.onVizScroll(evt);
-obj.Fig.WindowButtonDownFcn  = @(~, ~)   obj.onVizButtonDown();
-obj.Fig.WindowButtonUpFcn    = @(~, ~)   obj.onVizButtonUp();
-obj.Fig.WindowKeyPressFcn    = @(~, evt) obj.onVizKey(evt, true);
-obj.Fig.WindowKeyReleaseFcn  = @(~, evt) obj.onVizKey(evt, false);
+% Mouse wheel/drag and keyboard navigation are owned by obj.Viewer once it is
+% constructed (see onPlotVisualization), which self-attaches those figure-level
+% callbacks (guarded internally to the Visualize tab via ActiveFcn=vizActive).
+% WindowButtonDown/UpFcn are re-asserted there too, so plain-left artifact
+% marking keeps taking precedence over the viewer's own pan gesture.
+end
+
+
+function setViewerSpacing(obj, value)
+%setViewerSpacing  Apply a Trace-spacing field edit to the live viewer, if any.
+if ~isempty(obj.Viewer) && isvalid(obj.Viewer)
+    obj.Viewer.setSpacing(value);
+end
 end
 
 
@@ -159,12 +188,19 @@ function s = helpText()
 %helpText  Mouse / keyboard navigation cheatsheet shown under the controls.
 s = sprintf([ ...
     'Mouse over the plot:\n' ...
-    '  middle-drag .......... pan time (+ amplitude in traces)\n' ...
+    '  middle-drag .......... pan time (+ amplitude, or channel scroll\n' ...
+    '                         once more channels are loaded than shown)\n' ...
     '  wheel ................ fine scroll in time\n' ...
     '  Ctrl+wheel ........... jog one window at a time\n' ...
     '  Shift+wheel .......... zoom the time axis at cursor\n' ...
     '  Ctrl+Shift+wheel ..... scale channel amplitude\n' ...
-    '  <- / -> .............. step time     r ... reset view\n' ...
+    '  Alt+wheel ............ scroll the channel window\n' ...
+    '  Alt+Ctrl+wheel ....... page the channel window\n' ...
+    '  <- / -> .............. step time\n' ...
+    '  up/down, PgUp/PgDn, Home/End .. scroll/page/jump channel window\n' ...
+    '  = / - ................ amplitude gain     [ / ] ... channel spacing\n' ...
+    '  m .................... toggle traces/heatmap\n' ...
+    '  r .................... reset view          F1 ... full shortcut list\n' ...
     '\n' ...
     'Mark Artifacts (red regions are blanked when the .bin is written):\n' ...
     '  toggle on, then left-drag .. mark a period\n' ...

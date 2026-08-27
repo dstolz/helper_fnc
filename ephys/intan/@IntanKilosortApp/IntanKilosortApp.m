@@ -38,6 +38,12 @@ classdef IntanKilosortApp < handle
         Fig   matlab.ui.Figure
         Tabs  matlab.ui.container.TabGroup
 
+        % --- Menu bar ---
+        % "Dataset" is the app-wide single-dataset picker (it replaces the
+        % per-tab dataset dropdown); one checkable item per scanned dataset.
+        DatasetMenu      matlab.ui.container.Menu
+        DatasetMenuItems matlab.ui.container.Menu
+
         % --- Global status bar (bottom strip; see buildUI/setStatus) ---
         StatusBar  matlab.ui.control.Label   % last action / current state
         StatusHint matlab.ui.control.Label   % suggested next action
@@ -58,7 +64,7 @@ classdef IntanKilosortApp < handle
         ScanStatusLabel  matlab.ui.control.Label
 
         % --- Visualize tab ---
-        VizDatasetDropDown matlab.ui.control.DropDown
+        VizDatasetLabel    matlab.ui.control.Label   % mirrors the Dataset menu
         VizFileDropDown    matlab.ui.control.DropDown
         VizChannelsField   matlab.ui.control.EditField
         VizStartField      matlab.ui.control.NumericEditField
@@ -71,6 +77,8 @@ classdef IntanKilosortApp < handle
         VizSpacingField    matlab.ui.control.NumericEditField
         VizModeDropDown    matlab.ui.control.DropDown
         VizColormapDropDown matlab.ui.control.DropDown
+        VizSortByProbeCheckBox matlab.ui.control.CheckBox
+        VizColorByShankCheckBox matlab.ui.control.CheckBox
         VizPlotButton      matlab.ui.control.Button
         VizArtButton       matlab.ui.control.StateButton
         VizArtClearButton  matlab.ui.control.Button
@@ -100,6 +108,7 @@ classdef IntanKilosortApp < handle
         BrowseProbeFolderButton matlab.ui.control.Button
         ImportProbeButton   matlab.ui.control.Button
         EditProbeJSONButton matlab.ui.control.Button
+        DesignProbeButton   matlab.ui.control.Button
         RefreshProbesButton matlab.ui.control.Button
         ProbeTable          matlab.ui.control.Table
         ProbeInfoLabel      matlab.ui.control.Label
@@ -136,7 +145,8 @@ classdef IntanKilosortApp < handle
         DryRunCheckBox    matlab.ui.control.CheckBox
         SaveConfigButton  matlab.ui.control.Button
         LoadConfigButton  matlab.ui.control.Button
-        KSDocsButton      matlab.ui.control.Button
+        KSDocsLink        matlab.ui.control.Hyperlink
+        SIDocsLink        matlab.ui.control.Hyperlink
         RunKilosortButton matlab.ui.control.Button
         LaunchPhyButton   matlab.ui.control.Button
         KSProgressLabel   matlab.ui.control.Label
@@ -175,19 +185,28 @@ classdef IntanKilosortApp < handle
         KSMonitorTimer = []
 
         % --- Visualize interaction state (display-only, in-memory) ---
-        % VizData caches the whole, already-preprocessed window so navigation
-        % never re-reads or re-filters: X [nSamp x nCh], Fs, chans, name, clim0.
-        VizData = struct([])
-        % VizView holds the current viewport: tLeft/tWin (s), ampGain, yOffset,
-        % and mode ("traces"|"heatmap").
-        VizView = struct([])
-        VizLines = []          % per-channel line handles (traces mode)
-        VizImage = []          % image handle (heatmap mode)
-        VizColorbar = []       % colorbar handle (heatmap mode)
-        VizDrawnMode (1,1) string = ""   % mode currently drawn (triggers rebuild)
-        VizMods (1,:) string = string.empty(1,0)   % held modifier keys
-        VizPan = struct('active', false)            % middle-drag pan bookkeeping
-        VizPixelBudget (1,1) double = 2500          % max plotted points per channel
+        % Viewer is the MultiChannelViewer (plotting/@MultiChannelViewer) that
+        % owns the cached data, viewport, graphics, and pan/zoom/scroll
+        % interaction for the Visualize axes. Constructed on the first Plot
+        % press and reused (via Viewer.loadData) on subsequent presses, so its
+        % attached KeyMap/mouse callbacks are never re-installed.
+        Viewer = []
+        % Detected-artifact intervals (window-relative seconds) and the
+        % recording-relative time offset of the currently loaded window -- the
+        % two pieces of app-specific bookkeeping that don't belong on the
+        % generic Viewer. Read by drawVizArtifacts/finishVizArtDrag.
+        VizDetectedIntervals = zeros(0, 2)
+        VizTimeOffset (1,1) double = 0
+        VizDatasetIndex (1,1) double = 0   % index into obj.Project.Datasets
+        % Dataset picked in the figure's "Dataset" menu (0 = none). This is the
+        % single-dataset target for Visualize; VizDatasetIndex above is the one
+        % whose data is actually cached in the Viewer.
+        SelectedDatasetIdx (1,1) double = 0
+        % 1-based amplifier channels currently loaded into Viewer, in their
+        % original (as-typed) order -- i.e. Viewer's data-column order before
+        % any probe-depth sort. Read by applyVizChannelOrder to map the
+        % Viewer's data columns back to physical .bin channels.
+        VizChannels (1,:) double = double.empty(1,0)
         % Byte budget for the cached single-precision Visualize matrix. The
         % loader streams files one at a time and, when the full-resolution span
         % would exceed this, peak-decimates on load so RAM stays bounded
@@ -247,17 +266,17 @@ classdef IntanKilosortApp < handle
         onDetectArtifacts(obj)
 
         onPlotVisualization(obj)
-        renderViz(obj)
-        onVizScroll(obj, evt)
         onVizButtonDown(obj)
-        onVizButtonMotion(obj)
         onVizButtonUp(obj)
-        onVizKey(obj, evt, isPress)
         drawVizArtifacts(obj)
+        applyVizChannelOrder(obj)
+        applyVizChannelColor(obj)
 
         refreshProbeList(obj)
         onProbeSelected(obj)
         onImportProbe(obj)
+        onDesignProbe(obj)
+        result = runProbeTool(obj, varargin)
         onAssignProbe(obj, scope)
         onApplyExclude(obj, scope)
 
@@ -653,10 +672,19 @@ classdef IntanKilosortApp < handle
 
         function d = currentDataset(obj)
             % Return the IntanDataset for the last-selected table row ([] if none).
+            % Looked up via the row's DatasetIdx (not the row number itself),
+            % since sorting the table reorders rows independently of
+            % obj.Project.Datasets.
             d = IntanDataset.empty;
             if isempty(obj.Project) || obj.SelectedRow < 1; return; end
-            if obj.SelectedRow <= obj.Project.NumDatasets
-                d = obj.Project.Datasets(obj.SelectedRow);
+            T = obj.DatasetsTable.Data;
+            if ~istable(T) || obj.SelectedRow > height(T) ...
+                    || ~any(strcmp('DatasetIdx', T.Properties.VariableNames))
+                return
+            end
+            di = T.DatasetIdx(obj.SelectedRow);
+            if di >= 1 && di <= obj.Project.NumDatasets
+                d = obj.Project.Datasets(di);
             end
         end
 
@@ -772,36 +800,86 @@ classdef IntanKilosortApp < handle
             end
         end
 
-        function populateVizDatasets(obj)
-            % Fill the Visualize dataset dropdown from the scanned project.
+        function populateDatasetMenu(obj)
+            % Rebuild the figure's "Dataset" menu from the scanned project.
+            %   One checkable item per dataset; picking one calls selectDataset.
+            %   Keeps whatever was selected before if it still exists.
+            old = obj.DatasetMenuItems;
+            delete(old(isvalid(old)));
+            obj.DatasetMenuItems = matlab.ui.container.Menu.empty(1, 0);
+
             if isempty(obj.Project) || obj.Project.NumDatasets == 0
-                obj.VizDatasetDropDown.Items = {'(scan first)'};
-                obj.VizDatasetDropDown.ItemsData = {};
+                obj.SelectedDatasetIdx = 0;
+                obj.DatasetMenuItems = uimenu(obj.DatasetMenu, ...
+                    "Text", "(scan first)", "Enable", "off");
                 obj.VizFileDropDown.Items = {'(all)'};
+                obj.updateDatasetMenuCheck();
                 return
             end
-            names = cellstr([obj.Project.Datasets.Name]);
-            obj.VizDatasetDropDown.Items = names;
-            obj.VizDatasetDropDown.ItemsData = num2cell(1:numel(names));
+
+            names = [obj.Project.Datasets.Name];
+            items = matlab.ui.container.Menu.empty(1, 0);
+            for k = 1:numel(names)
+                % Double any '&' so it shows literally instead of underlining
+                % the next character as a mnemonic.
+                items(k) = uimenu(obj.DatasetMenu, ...
+                    "Text", strrep(names(k), "&", "&&"), ...
+                    "MenuSelectedFcn", @(~,~) obj.selectDataset(k));
+            end
+            obj.DatasetMenuItems = items;
+
+            idx = obj.SelectedDatasetIdx;
+            if idx < 1 || idx > numel(names); idx = 1; end
+            obj.selectDataset(idx);
+        end
+
+        function selectDataset(obj, idx)
+            % Make dataset IDX the app-wide single-dataset target (Dataset menu).
+            if isempty(obj.Project) || idx < 1 || idx > obj.Project.NumDatasets
+                obj.SelectedDatasetIdx = 0;
+            else
+                obj.SelectedDatasetIdx = idx;
+            end
+            obj.updateDatasetMenuCheck();
             obj.populateVizFiles();
+        end
+
+        function updateDatasetMenuCheck(obj)
+            % Tick the active menu item and mirror its name onto the Visualize tab.
+            items = obj.DatasetMenuItems;
+            for k = 1:numel(items)
+                if isvalid(items(k))
+                    items(k).Checked = (k == obj.SelectedDatasetIdx);
+                end
+            end
+            if isempty(obj.VizDatasetLabel) || ~isvalid(obj.VizDatasetLabel)
+                return
+            end
+            if obj.SelectedDatasetIdx >= 1
+                obj.VizDatasetLabel.Text = obj.Project.Datasets(obj.SelectedDatasetIdx).Name;
+                obj.VizDatasetLabel.FontColor = [0.15 0.15 0.15];
+            else
+                obj.VizDatasetLabel.Text = "(none - scan, then pick from the Dataset menu)";
+                obj.VizDatasetLabel.FontColor = [0.5 0.5 0.5];
+            end
         end
 
         function onVizModeChanged(obj)
             % Switch traces <-> heatmap without re-reading/re-filtering.
-            if isempty(obj.VizData) || ~isfield(obj.VizData, 'X'); return; end
-            obj.VizView.mode = string(obj.VizModeDropDown.Value);
-            obj.renderViz();
+            if isempty(obj.Viewer) || ~isvalid(obj.Viewer); return; end
+            obj.Viewer.setMode(string(obj.VizModeDropDown.Value));
         end
 
         function onVizColormapChanged(obj)
             % Re-render so a new heatmap colormap takes effect immediately.
-            if isempty(obj.VizData) || ~isfield(obj.VizData, 'X'); return; end
-            obj.renderViz();
+            if isempty(obj.Viewer) || ~isvalid(obj.Viewer); return; end
+            obj.Viewer.Colormap = string(obj.VizColormapDropDown.Value);
+            obj.Viewer.render();
         end
 
         function tf = vizActive(obj)
-            % True when there is cached data and the Visualize tab is showing.
-            tf = ~isempty(obj.VizData) && isfield(obj.VizData, 'X') ...
+            % True when there is a cached viewer and the Visualize tab is showing.
+            tf = ~isempty(obj.Viewer) && isvalid(obj.Viewer) ...
                 && isvalid(obj.Fig) && obj.Tabs.SelectedTab == obj.TabVisualize;
         end
 
@@ -817,9 +895,8 @@ classdef IntanKilosortApp < handle
         function d = currentVizDataset(obj)
             % Dataset handle backing the currently cached Visualize data ([] none).
             d = IntanDataset.empty;
-            if isempty(obj.VizData) || ~isfield(obj.VizData, 'dsIndex'); return; end
-            i = obj.VizData.dsIndex;
-            if ~isempty(obj.Project) && i >= 1 && i <= obj.Project.NumDatasets
+            i = obj.VizDatasetIndex;
+            if i >= 1 && ~isempty(obj.Project) && i <= obj.Project.NumDatasets
                 d = obj.Project.Datasets(i);
             end
         end
@@ -846,7 +923,7 @@ classdef IntanKilosortApp < handle
                 return
             end
             d.ManualArtifacts = zeros(0, 2);
-            obj.renderViz();
+            if ~isempty(obj.Viewer) && isvalid(obj.Viewer); obj.Viewer.render(); end
             obj.updateVizArtStatus();
         end
 
@@ -879,11 +956,12 @@ classdef IntanKilosortApp < handle
 
             x0 = D.x0;
             x1 = obj.VizAxes.CurrentPoint(1, 1);
-            tOff = 0;
-            if isfield(obj.VizData, 'tOffset'); tOff = obj.VizData.tOffset; end
+            tOff = obj.VizTimeOffset;
 
             % Treat a sub-few-pixel move as a click (delete) rather than a drag.
-            secPerPix = obj.VizView.tWin / max(D.axPix(3), 1);
+            tWin = 1;
+            if ~isempty(obj.Viewer) && isvalid(obj.Viewer); tWin = obj.Viewer.TimeWindowDuration; end
+            secPerPix = tWin / max(D.axPix(3), 1);
             if abs(x1 - x0) >= 4 * secPerPix
                 d.addArtifact(min(x0, x1) + tOff, max(x0, x1) + tOff);
             else
@@ -896,7 +974,7 @@ classdef IntanKilosortApp < handle
                     end
                 end
             end
-            obj.renderViz();
+            if ~isempty(obj.Viewer) && isvalid(obj.Viewer); obj.Viewer.render(); end
             obj.updateVizArtStatus();
         end
 
@@ -905,10 +983,7 @@ classdef IntanKilosortApp < handle
             % reporting both auto-detected (orange) and manual (red) periods.
             if isempty(obj.VizArtStatusLabel) || ~isvalid(obj.VizArtStatusLabel); return; end
 
-            nDet = 0;
-            if ~isempty(obj.VizData) && isfield(obj.VizData, 'detectedIntervals')
-                nDet = size(obj.VizData.detectedIntervals, 1);
-            end
+            nDet = size(obj.VizDetectedIntervals, 1);
             detTxt = "";
             if nDet > 0
                 detTxt = sprintf("%d detected (orange). ", nDet);
@@ -931,9 +1006,8 @@ classdef IntanKilosortApp < handle
 
         function populateVizFiles(obj)
             % Fill the Visualize file dropdown for the chosen dataset.
-            idx = obj.VizDatasetDropDown.Value;
-            if isempty(idx) || ~isnumeric(idx) || isempty(obj.Project) ...
-                    || idx > obj.Project.NumDatasets
+            idx = obj.SelectedDatasetIdx;
+            if idx < 1 || isempty(obj.Project) || idx > obj.Project.NumDatasets
                 obj.VizFileDropDown.Items = {'(all)'};
                 return
             end
@@ -1008,13 +1082,16 @@ classdef IntanKilosortApp < handle
         end
 
         function idx = selectedDatasetIndices(obj)
-            % Indices of datasets ticked in the table's "Select" column.
-            % Falls back to all datasets when none are ticked.
+            % Indices into obj.Project.Datasets ticked in the table's "Select"
+            % column, resolved through each row's DatasetIdx (not the row
+            % number) since sorting reorders table rows independently of
+            % obj.Project.Datasets. Falls back to all datasets when none ticked.
             idx = [];
             if isempty(obj.Project) || obj.Project.NumDatasets == 0; return; end
             T = obj.DatasetsTable.Data;
-            if istable(T) && any(strcmp('Select', T.Properties.VariableNames))
-                idx = find(T.Select(:).');
+            if istable(T) && any(strcmp('Select', T.Properties.VariableNames)) ...
+                    && any(strcmp('DatasetIdx', T.Properties.VariableNames))
+                idx = T.DatasetIdx(T.Select(:))';
             end
             if isempty(idx)
                 idx = 1:obj.Project.NumDatasets;

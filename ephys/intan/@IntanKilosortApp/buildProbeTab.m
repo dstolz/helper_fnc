@@ -1,8 +1,8 @@
 function buildProbeTab(obj)
 %buildProbeTab  Pick a probe .json, channel-count check, assign to datasets.
 
-g = uigridlayout(obj.TabProbe, [5 4]);
-g.RowHeight   = {'fit', '1x', 'fit', 'fit', 'fit'};
+g = uigridlayout(obj.TabProbe, [6 4]);
+g.RowHeight   = {'fit', '1x', 'fit', 'fit', 'fit', 'fit'};
 g.ColumnWidth = {'fit', '1x', 'fit', 'fit'};
 g.Padding     = [10 10 10 10];
 
@@ -45,39 +45,45 @@ title(obj.ProbePreviewAxes, "Channel arrangement");
 xlabel(obj.ProbePreviewAxes, "x (\mum)");
 ylabel(obj.ProbePreviewAxes, "y (\mum)");
 
-% Row 3: import / edit + channel-number toggle for the preview plot
+% Row 3: build a new probe from the probeinterface library / generators
+obj.DesignProbeButton = uibutton(g, "Text", "Design probe from probeinterface (library / generate)...", ...
+    "Tooltip", "Pick a manufactured probe or generate a geometry, wire it to channels, and save a Kilosort4 .json.", ...
+    "ButtonPushedFcn", @(~,~) obj.onDesignProbe());
+obj.DesignProbeButton.Layout.Row = 3; obj.DesignProbeButton.Layout.Column = [1 4];
+
+% Row 4: import / edit + channel-number toggle for the preview plot
 obj.ImportProbeButton = uibutton(g, "Text", "Import probe .json into folder...", ...
     "ButtonPushedFcn", @(~,~) obj.onImportProbe());
-obj.ImportProbeButton.Layout.Row = 3; obj.ImportProbeButton.Layout.Column = 1;
+obj.ImportProbeButton.Layout.Row = 4; obj.ImportProbeButton.Layout.Column = 1;
 
 obj.EditProbeJSONButton = uibutton(g, "Text", "Edit probe .json...", ...
     "ButtonPushedFcn", @(~,~) obj.onEditProbeJSON());
-obj.EditProbeJSONButton.Layout.Row = 3; obj.EditProbeJSONButton.Layout.Column = 2;
+obj.EditProbeJSONButton.Layout.Row = 4; obj.EditProbeJSONButton.Layout.Column = 2;
 
 obj.ShowChanNumbersCheckBox = uicheckbox(g, "Text", "Show channel numbers", ...
     "Value", false, ...
     "Tooltip", "Label each probe site with its 1-based .bin channel number.", ...
     "ValueChangedFcn", @(~,~) obj.onProbeSelected());
-obj.ShowChanNumbersCheckBox.Layout.Row = 3; obj.ShowChanNumbersCheckBox.Layout.Column = [3 4];
+obj.ShowChanNumbersCheckBox.Layout.Row = 4; obj.ShowChanNumbersCheckBox.Layout.Column = [3 4];
 
-% Row 4: per-recording channel exclusions (dropped from KS4 sorting, may
+% Row 5: per-recording channel exclusions (dropped from KS4 sorting, may
 % differ across recordings). Reflects the active dataset; Apply writes it back.
 exLbl = uilabel(g, "Text", "Exclude channels:", ...
     "Tooltip", "1-based channels to drop from Kilosort sorting, e.g. 1,5,32-40. May differ per recording.");
-exLbl.Layout.Row = 4; exLbl.Layout.Column = 1;
+exLbl.Layout.Row = 5; exLbl.Layout.Column = 1;
 
 obj.ExcludeChannelsField = uieditfield(g, "text", ...
     "Placeholder", "e.g. 1,5,32-40 (blank = none)", ...
     "ValueChangedFcn", @(~,~) obj.onApplyExclude("selected"));
-obj.ExcludeChannelsField.Layout.Row = 4; obj.ExcludeChannelsField.Layout.Column = 2;
+obj.ExcludeChannelsField.Layout.Row = 5; obj.ExcludeChannelsField.Layout.Column = 2;
 
 
-% Row 5: assign
+% Row 6: assign
 obj.AssignSelectedButton = uibutton(g, "Text", "Assign to selected dataset", ...
     "ButtonPushedFcn", @(~,~) obj.onAssignProbe("selected"));
-obj.AssignSelectedButton.Layout.Row = 5; obj.AssignSelectedButton.Layout.Column = 1;
+obj.AssignSelectedButton.Layout.Row = 6; obj.AssignSelectedButton.Layout.Column = 1;
 
 obj.AssignAllButton = uibutton(g, "Text", "Assign to all datasets", ...
     "ButtonPushedFcn", @(~,~) obj.onAssignProbe("all"));
-obj.AssignAllButton.Layout.Row = 5; obj.AssignAllButton.Layout.Column = 2;
+obj.AssignAllButton.Layout.Row = 6; obj.AssignAllButton.Layout.Column = 2;
 end

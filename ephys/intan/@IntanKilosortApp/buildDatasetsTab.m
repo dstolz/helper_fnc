@@ -41,10 +41,15 @@ obj.ScanStatusLabel.Layout.Row = 2; obj.ScanStatusLabel.Layout.Column = [1 6];
 % Row 3: datasets table
 obj.DatasetsTable = uitable(g);
 obj.DatasetsTable.Layout.Row = 3; obj.DatasetsTable.Layout.Column = [1 6];
+% Trailing "DatasetIdx" is a hidden bookkeeping column (see refreshDatasetsTable)
+% that maps a table row back to its position in obj.Project.Datasets; it is
+% needed because sorting reorders table rows without touching that array.
 obj.DatasetsTable.ColumnName = {'Select', 'Name', 'Acq date', '# files', ...
-    '# chan', 'Fs (Hz)', 'Duration (min)', 'Format', 'Probe', 'Exclude', 'Kilosort'};
+    '# chan', 'Fs (Hz)', 'Duration (min)', 'Format', 'Probe', 'Exclude', ...
+    'Kilosort', ''};
 obj.DatasetsTable.ColumnEditable = ...
-    [true false false false false false false false false false false];
+    [true false false false false false false false false false false false];
+obj.DatasetsTable.ColumnSortable = [true(1, 11) false];
 obj.DatasetsTable.CellSelectionCallback = @(~,evt) obj.onDatasetCellSelection(evt);
-obj.DatasetsTable.ColumnWidth = {50, 'auto', 130, 60, 60, 80, 100, 130, 60, 90, 90};
+obj.DatasetsTable.ColumnWidth = {50, 'auto', 130, 60, 60, 80, 100, 130, 60, 90, 90, 1};
 end

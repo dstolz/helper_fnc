@@ -21,15 +21,16 @@ function onPlotVisualization(obj)
 %        cached sample rate is reduced to match. This bounds RAM regardless of
 %        recording length while keeping the whole span navigable.
 %
-%   The cache (obj.VizData) keeps the same fields as before, so renderViz and the
-%   mouse/key handlers are unchanged: navigation still pans/zooms/scales entirely
-%   from the cached copy without ever re-reading or re-filtering. When the data
-%   was decimated to fit memory, VizData.Fs is the (reduced) effective rate; true
-%   recording time is preserved everywhere because tt = sampleIndex / Fs.
+%   The cached matrix is handed to obj.Viewer (a plotting/@MultiChannelViewer),
+%   which owns all navigation from there: pan/zoom/scale entirely from the
+%   cached copy without ever re-reading or re-filtering. When the data was
+%   decimated to fit memory, the effective (reduced) Fs is passed to the
+%   viewer instead; true recording time is preserved everywhere because
+%   tt = sampleIndex / Fs.
 
-idx = obj.VizDatasetDropDown.Value;
-if isempty(idx) || ~isnumeric(idx) || isempty(obj.Project) || idx > obj.Project.NumDatasets
-    uialert(obj.Fig, "Scan, then choose a dataset to visualize.", "Visualize");
+idx = obj.SelectedDatasetIdx;
+if idx < 1 || isempty(obj.Project) || idx > obj.Project.NumDatasets
+    uialert(obj.Fig, "Scan, then choose a dataset from the Dataset menu.", "Visualize");
     return
 end
 d = obj.Project.Datasets(idx);
@@ -111,7 +112,6 @@ try
     X = zeros(outLen, nCh, 'single');
 
     row = 0;                 % rows filled so far
-    climSamp = cell(1, nChunks);  % small per-chunk subsample for the colour limit
     for i = 1:nChunks
         if isvalid(dlg)
             dlg.Value   = (i - 1) / nChunks;
@@ -145,11 +145,6 @@ try
         end
         X(row + (1:m), :) = Xi;
         row = row + m;
-
-        % Keep a thin subsample for a robust amplitude scale without ever
-        % materialising the full matrix again.
-        step = max(1, floor(m / 2000));
-        climSamp{i} = Xi(1:step:end, :);
     end
 
     X = X(1:row, :);                        % trim unused capacity
@@ -159,17 +154,6 @@ try
 
     Fs    = FsTrue / decim;                 % effective (cached) sample rate
     nSamp = size(X, 1);
-
-    % Robust per-recording amplitude scale (~5 sigma via the MAD) from the
-    % subsample; guarded against all-zero/flat input.
-    cs    = cat(1, climSamp{:});
-    cs    = cs(:);
-    med   = median(cs);
-    clim0 = 5 * median(abs(cs - med));
-    if ~isfinite(clim0) || clim0 <= 0
-        clim0 = max(1, max(abs(cs)));
-    end
-    if ~isfinite(clim0) || clim0 <= 0; clim0 = 1; end
 
     if isvalid(dlg); close(dlg); end
 
@@ -186,36 +170,51 @@ try
         end
     end
 
-    % Cache everything needed to navigate without re-reading (same fields as
-    % before; Fs is the effective rate when decimated).
-    obj.VizData = struct( ...
-        'X', X, 'Fs', Fs, 'nSamp', nSamp, 'nCh', nCh, ...
-        'chans', chans(:).', 'name', d.Name, 'clim0', clim0, ...
-        'dsIndex', idx, 'tOffset', tOffset);
+    % App-specific bookkeeping the generic MultiChannelViewer doesn't need to
+    % know about: automatically detected artifacts for this window (display
+    % overlay only; uses the same detector as the Artifacts tab/.bin write,
+    % window-relative seconds) and the recording-relative time offset. Drawn
+    % by drawVizArtifacts, which the Viewer calls after every render via
+    % PostRenderFcn.
+    obj.VizDetectedIntervals = computeDetectedIntervals(d, X, Fs);
+    obj.VizTimeOffset = tOffset;
+    obj.VizDatasetIndex = idx;
+    obj.VizChannels = chans;
 
-    % Automatically detected artifacts for this window (display overlay only;
-    % uses the same detector as the Artifacts tab / .bin write). Intervals are
-    % window-relative seconds, matching the displayed time axis. Drawn by
-    % drawVizArtifacts alongside any manually marked periods.
-    obj.VizData.detectedIntervals = computeDetectedIntervals(d, X, Fs);
-
-    % Initial viewport from the Start/Window fields.
+    chanNames = compose("ch%d", chans(:).');
     tWin  = min(obj.VizDurField.Value, nSamp / Fs);
     tLeft = min(obj.VizStartField.Value, max(0, nSamp / Fs - tWin));
-    obj.VizView = struct( ...
-        'mode', string(obj.VizModeDropDown.Value), ...
-        'tLeft', tLeft, 'tWin', tWin, 'ampGain', 1, 'yOffset', 0);
 
-    % Force a clean rebuild of the graphics objects for the new data.
-    obj.VizDrawnMode = "";
-    obj.VizLines = [];
-    obj.VizImage = [];
-    if ~isempty(obj.VizColorbar) && isvalid(obj.VizColorbar)
-        delete(obj.VizColorbar);
+    if isempty(obj.Viewer) || ~isvalid(obj.Viewer)
+        % First plot: construct the viewer once, parented to the Visualize
+        % axes. It self-attaches its own scroll/drag/keyboard callbacks; the
+        % app then re-asserts WindowButtonDown/UpFcn so plain-left artifact
+        % marking still takes precedence over the viewer's pan gesture.
+        obj.Viewer = MultiChannelViewer(X, Fs, Parent=obj.VizAxes, ...
+            ChannelNames=chanNames, Units="uV", ...
+            Mode=string(obj.VizModeDropDown.Value), ...
+            VisibleChannels=min(16, nCh), ...
+            TraceSpacing=obj.VizSpacingField.Value, ...
+            Colormap=string(obj.VizColormapDropDown.Value), ...
+            ActiveFcn=@() obj.vizActive(), ...
+            PostRenderFcn=@() obj.drawVizArtifacts());
+        obj.Fig.WindowButtonDownFcn = @(~, ~) obj.onVizButtonDown();
+        obj.Fig.WindowButtonUpFcn   = @(~, ~) obj.onVizButtonUp();
+    else
+        % Subsequent plots: reuse the same instance (and its callback/KeyMap
+        % wiring) with the newly streamed data.
+        obj.Viewer.loadData(X, Fs, ChannelNames=chanNames, Units="uV");
     end
-    obj.VizColorbar = [];
 
-    obj.renderViz();
+    % Apply the Start/Window fields and reset gain/offset fresh on every plot,
+    % matching the previous behaviour.
+    obj.Viewer.TimeWindowDuration = tWin;
+    obj.Viewer.TimeWindowStart = tLeft;
+    obj.Viewer.AmpGain = 1;
+    obj.Viewer.YOffset = 0;
+    obj.applyVizChannelOrder();   % also renders, reflecting the settings just above
+    obj.applyVizChannelColor();   % also renders, reflecting the settings just above
+
     obj.updateVizArtStatus();
 
     if decim > 1
@@ -229,7 +228,7 @@ try
             nCh, nSamp, nSamp / Fs);
     end
 
-    nDet = size(obj.VizData.detectedIntervals, 1);
+    nDet = size(obj.VizDetectedIntervals, 1);
     obj.setStatus(sprintf("Plotted %s: %d ch, %.2f s (%d artifact interval(s) detected).", ...
         d.Name, nCh, nSamp / Fs, nDet), ...
         "Scroll/drag to navigate; toggle 'Mark Artifacts' to add manual periods.");

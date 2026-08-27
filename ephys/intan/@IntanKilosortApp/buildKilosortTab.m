@@ -182,9 +182,13 @@ obj.LoadConfigButton = uibutton(cg, "Text", "Load config...", ...
 obj.LoadConfigButton.Layout.Row = r; obj.LoadConfigButton.Layout.Column = 4;
 
 r = r + 1;
-obj.KSDocsButton = uibutton(cg, "Text", "Kilosort4 parameter docs...", ...
-    "ButtonPushedFcn", @(~,~) web("https://kilosort.readthedocs.io/en/latest/parameters.html", "-browser"));
-obj.KSDocsButton.Layout.Row = r; obj.KSDocsButton.Layout.Column = [2 4];
+obj.KSDocsLink = uihyperlink(cg, "Text", "Kilosort4 parameter docs", ...
+    "URL", "https://kilosort.readthedocs.io/en/latest/parameters.html");
+obj.KSDocsLink.Layout.Row = r; obj.KSDocsLink.Layout.Column = [2 3];
+
+obj.SIDocsLink = uihyperlink(cg, "Text", "SpikeInterface docs", ...
+    "URL", "https://spikeinterface.readthedocs.io/en/stable/");
+obj.SIDocsLink.Layout.Row = r; obj.SIDocsLink.Layout.Column = [4 5];
 
 % =================== right column: batch run + log ===================
 runPanel = uipanel(g, "Title", "Batch processing");

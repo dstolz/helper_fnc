@@ -26,7 +26,7 @@ try
         close(dlg);
         obj.Project = P;
         obj.refreshDatasetsTable();
-        obj.populateVizDatasets();
+        obj.populateDatasetMenu();
         obj.populateArtifactDatasets();
         obj.populateReviewDatasets();
         obj.ScanStatusLabel.Text = sprintf("No *.rhd folders found under %s", root);
@@ -67,7 +67,7 @@ try
 
     obj.Project = P;
     obj.refreshDatasetsTable();
-    obj.populateVizDatasets();
+    obj.populateDatasetMenu();
     obj.populateArtifactDatasets();
     obj.applyArtifactConfigToProject();   % seed every dataset with the tab's config
     obj.ScanStatusLabel.Text = sprintf("Found %d dataset(s) under %s", n, root);

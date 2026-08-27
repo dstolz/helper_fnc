@@ -5,6 +5,12 @@ pos = [120 90 1180 760];   % default; overridden by saved pref in loadPreference
 obj.Fig = uifigure("Name", "Intan -> Kilosort4", "Position", pos);
 obj.Fig.CloseRequestFcn = @(~,~) obj.onClose();
 
+% App-wide single-dataset picker. The items are filled in by
+% populateDatasetMenu once a scan has found datasets; selectDataset ticks the
+% active one and drives the Visualize tab (see updateDatasetMenuCheck).
+obj.DatasetMenu = uimenu(obj.Fig, "Text", "Dataset");
+obj.DatasetMenuItems = uimenu(obj.DatasetMenu, "Text", "(scan first)", "Enable", "off");
+
 % Two-row layout: the tab group fills the figure, with a thin status bar strip
 % pinned along the bottom (see buildStatusBar / setStatus).
 outer = uigridlayout(obj.Fig, [2 1]);

@@ -7,14 +7,12 @@ if isempty(evt.Indices)
 end
 obj.SelectedRow = evt.Indices(1);
 
-% Keep the Visualize dataset dropdown in sync with the clicked row.
-if ~isempty(obj.Project) && obj.SelectedRow >= 1 ...
-        && obj.SelectedRow <= obj.Project.NumDatasets
-    data = obj.VizDatasetDropDown.ItemsData;
-    if iscell(data) && any(cellfun(@(x) isequal(x, obj.SelectedRow), data))
-        obj.VizDatasetDropDown.Value = obj.SelectedRow;
-        obj.populateVizFiles();
-    end
+% Keep the "Dataset" menu (indexed by dataset order, not table row order) in
+% sync with the clicked row via its DatasetIdx.
+d = obj.currentDataset();
+if ~isempty(d)
+    T = obj.DatasetsTable.Data;
+    obj.selectDataset(T.DatasetIdx(obj.SelectedRow));
 end
 
 % Reflect the newly selected dataset's per-recording channel exclusions.

@@ -39,3 +39,22 @@ blocks you — Kilosort4 itself will also warn at run time
 (`IntanDataset.runKilosort` calls `checkProbeChannels`).
 
 Drop your probe `.json` files in this folder to have them appear automatically.
+
+## Creating probes with the designer
+
+Instead of hand-writing the JSON above, use **Probe tab → "Design probe from
+probeinterface (library / generate)..."**. The designer (`ProbeDesignerApp`) can:
+
+- **Library** — fetch a manufactured probe from the
+  [probeinterface library](https://github.com/SpikeInterface/probeinterface_library)
+  (NeuroNexus, Cambridge Neurotech, IMEC, Plexon, …).
+- **Generate** — build a standard geometry (linear / multi-column / tetrode).
+- **Wire** — map each contact to an Intan amplifier channel (the `chanMap`),
+  with Identity / Reverse / load-from-file presets.
+
+It shells out to `@IntanKilosortApp/probe_tool.py` in the configured sorting
+conda env (probeinterface is already installed there; the library needs internet
+on first fetch, then caches) and **writes a plain Kilosort4 `.json` in the schema
+above** into this folder — so everything downstream is unchanged. Editing the
+wiring/name/notes and saving is done MATLAB-side; probeinterface is only the
+front door.

@@ -22,5 +22,5 @@ end
 close(dlg);
 
 obj.refreshDatasetsTable();
-obj.populateVizDatasets();
+obj.populateDatasetMenu();
 end
