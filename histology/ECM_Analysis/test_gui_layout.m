@@ -1,5 +1,6 @@
 % Quick test of ECMAnalysisApp with new layout
 addpath(genpath('c:/src/helper_fnc'));
+addpath('c:/src/histology_browser');  % combine_values_csv
 
 try
     app = ECMAnalysisApp();

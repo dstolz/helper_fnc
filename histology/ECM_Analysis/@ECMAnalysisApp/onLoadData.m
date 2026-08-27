@@ -1,4 +1,11 @@
         function onLoadData(obj)
+            % combine_values_csv lives in the histology_browser repo.
+            if exist("combine_values_csv", "file") ~= 2
+                uialert(obj.Fig, "combine_values_csv was not found. Add the " + ...
+                    "histology_browser repository to the MATLAB path.", "Missing Dependency");
+                return
+            end
+
             rootPath = string(obj.RootPathField.Value);
             metadataPath = strtrim(string(obj.MetadataPathField.Value));
 

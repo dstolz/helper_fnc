@@ -156,6 +156,15 @@ Run the `.jsx` automation scripts from Photoshop's Scripts workflow.
 
 The [histology/](histology/) folder is the most specialized part of the repository. It contains both reusable image-processing functions and interactive tools for image registration, thresholding, and crop review.
 
+The section browser and the values-CSV ingest helpers now live in their own repository, [histology_browser](https://github.com/dstolz/histology_browser): `HistologyImageBrowser`, `launch_histology_browser`, `combine_values_csv`, `build_histology_image_catalog`, `parse_histology_filename`, `read_imagej_roi`, `write_imagej_roi`, `write_values_csv`, `imagej_pixel_size`, and `measure_line_profile`.
+
+**The ECM analysis app in [histology/ECM_Analysis/](histology/ECM_Analysis/) depends on that repository** for `combine_values_csv`, so add it to the MATLAB path alongside this one:
+
+```matlab
+addpath_nogit(pwd)
+addpath('c:/src/histology_browser')
+```
+
 | File | Summary |
 | --- | --- |
 | [extract_czi_metadata.m](histology/extract_czi_metadata.m) | Recursively extracts checklist-aligned metadata from `.czi` files into a table, with optional parallel processing and Excel export. |
@@ -212,6 +221,7 @@ These scripts run inside Photoshop and automate multi-image stitching workflows.
 
 - MATLAB is the primary environment for the `.m` utilities.
 - Several histology functions depend on Bio-Formats and Image Processing Toolbox-style functionality.
+- [histology/ECM_Analysis/](histology/ECM_Analysis/) additionally requires the [histology_browser](https://github.com/dstolz/histology_browser) repository on the path.
 - Fiji macros expect Fiji/ImageJ plugins such as Bio-Formats and, for segmentation, Labkit.
 - Slicer scripts must be executed inside 3D Slicer rather than a standard Python interpreter.
 - Photoshop scripts target Adobe Photoshop's ExtendScript environment.

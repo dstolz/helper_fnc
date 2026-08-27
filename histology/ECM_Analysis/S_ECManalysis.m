@@ -8,6 +8,12 @@ projectFile = "D:/GM6001_HISTOLOGY/ECM Projects - GM6001.csv";
 % metaDataFile = "C:/Users/dstolz/My Drive/PROJECTS/GM6001/HISTOLOGY/Trackers - Sections.csv";
 
 
+% combine_values_csv lives in the histology_browser repo, not here.
+if exist("combine_values_csv", "file") ~= 2
+    error("S_ECManalysis:MissingDependency", ...
+        "combine_values_csv not found. Add the histology_browser repository to the MATLAB path.")
+end
+
 S = combine_values_csv(histologyPath, metadataCSV = metaDataFile);
 
 ind = endsWith(S.combined.("Processing ID"),"IHC_ECM26A260727S1");
