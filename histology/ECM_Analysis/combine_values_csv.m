@@ -47,7 +47,9 @@ resolvedOptions.outCSV = string(options.outCSV);
 resolvedOptions.metadataCSV = string(options.metadataCSV);
 
 metadataInfo = load_metadata(resolvedOptions.metadataCSV);
-files = dir(fullfile(rootPath, "**", "*_values.csv"));
+% Match both "<base>_values.csv" and "<base>_proj_<ROI>values.csv", since the
+% Fiji line-measure macro's suffix prompt does not always include the "_".
+files = dir(fullfile(rootPath, "**", "*values.csv"));
 
 S = initialize_output_struct(rootPath, resolvedOptions, metadataInfo);
 
@@ -302,13 +304,7 @@ nRows = height(Ti);
 
 [~, stem] = fileparts(filename);
 
-roiToken = regexp(stem, "_proj_(\w+)_values$", "tokens", "once");
-roi = string("");
-if ~isempty(roiToken)
-    roi = string(roiToken{1});
-end
-
-stem = regexprep(stem, "(_proj\w*)?_values$", "");
+[stem, roi] = strip_values_suffix(stem);
 fileInfo = parse_values_filename(stem, filename);
 
 Ti.SourceFileIndex = repmat(fileIndex, nRows, 1);
@@ -330,6 +326,27 @@ if metadataInfo.hasMetadata
     metadataRow = match_metadata_row(metadataInfo.table, metadataInfo.imageStems, stem, filename);
     Ti = append_metadata_columns(Ti, metadataRow, nRows, metadataInfo.imageFilenameColumn);
 end
+
+end
+
+function [stem, roi] = strip_values_suffix(stem)
+%STRIP_VALUES_SUFFIX Remove the values/projection markers and extract the ROI.
+% Tolerates both naming conventions produced by MACRO_Batch_LineMeasure:
+%   <base>_values                 -> stem = <base>,  roi = ""
+%   <base>_proj_values            -> stem = <base>,  roi = ""
+%   <base>_proj_<ROI>_values      -> stem = <base>,  roi = <ROI>
+%   <base>_proj_<ROI>values       -> stem = <base>,  roi = <ROI>   (missing "_")
+
+stem = string(stem);
+
+roiToken = regexp(stem, "_proj_(\w*?)_?values$", "tokens", "once");
+roi = "";
+if ~isempty(roiToken)
+    roi = string(roiToken{1});
+end
+
+stem = regexprep(stem, "_?values$", "");
+stem = regexprep(stem, "_proj\w*$", "");
 
 end
 
@@ -467,8 +484,7 @@ for iName = 1:numel(names)
         baseName = thisName;
     end
 
-    baseName = regexprep(string(baseName), "(_proj\w*)?_values$", "");
-    stems(iName) = baseName;
+    stems(iName) = strip_values_suffix(baseName);
 end
 
 end
