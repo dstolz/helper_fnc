@@ -55,6 +55,12 @@ obj.TimeWindowStart = 0;
 obj.FirstVisibleChannel = 1;
 obj.NumVisibleChannels = min(max(1, round(obj.NumVisibleChannels)), nCh);
 
+% A new channel count invalidates any previous display-order permutation and
+% any previous group assignment; callers that want them re-apply via
+% setChannelOrder()/setChannelGroups() after loadData.
+obj.ChannelOrder = double.empty(1,0);
+obj.ChannelGroups = double.empty(1,0);
+
 % Force a clean rebuild of the main-axes graphics on the next render().
 obj.DrawnMode = "";
 obj.Lines = gobjects(0, 1);

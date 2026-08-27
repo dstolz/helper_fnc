@@ -31,7 +31,15 @@ i0 = max(1, floor(tLeft * Fs) + 1);
 i1 = min(nSamp, i0 + max(1, round(tWin * Fs)) - 1);
 chIdx = fvc:(fvc + nvc - 1);
 
-seg = D.X(i0:i1, chIdx);            % [m x nvc], visible samples/channels only
+% --- map display position -> data column, per ChannelOrder (identity if unset) ---
+order = obj.ChannelOrder;
+if numel(order) == nCh
+    dataIdx = order(chIdx);
+else
+    dataIdx = chIdx;
+end
+
+seg = D.X(i0:i1, dataIdx);          % [m x nvc], visible samples/channels only
 tt  = (i0-1:i1-1).' / Fs;           % [m x 1] absolute time (s)
 
 % --- (re)build the main axes' graphics when the mode changes ---
@@ -49,9 +57,9 @@ if obj.DrawnMode ~= obj.Mode
 end
 
 if obj.Mode == "heatmap"
-    obj.renderHeatmap(seg, tt, chIdx);
+    obj.renderHeatmap(seg, tt, dataIdx);
 else
-    obj.renderTraces(seg, tt, chIdx);
+    obj.renderTraces(seg, tt, dataIdx);
 end
 obj.DrawnChannelWindow = [fvc, nvc];
 

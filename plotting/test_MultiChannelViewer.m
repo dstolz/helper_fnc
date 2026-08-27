@@ -79,12 +79,12 @@ for m = ["traces", "heatmap"]
     v2.setMode(m);
     v2.jumpToChannel(1);
     check(v2.FirstVisibleChannel == 1, "jumpToChannel(1) -> FirstVisibleChannel==1 (" + m + ")");
-    check(isequal(v2.Axes.YTickLabel, cellstr(v2.ChannelNames(1:16))), ...
+    check(isequal(v2.Axes.YTickLabel, cellstr(v2.ChannelNames(1:16)).'), ...
         "YTickLabels show channels 1-16 (" + m + ")");
 
     v2.scrollChannels(1);
     check(v2.FirstVisibleChannel == 2, "scrollChannels(+1) increments by 1 (" + m + ")");
-    check(isequal(v2.Axes.YTickLabel, cellstr(v2.ChannelNames(2:17))), ...
+    check(isequal(v2.Axes.YTickLabel, cellstr(v2.ChannelNames(2:17)).'), ...
         "YTickLabels track channel window after scroll (" + m + ")");
 
     v2.scrollChannels(1000);
@@ -146,7 +146,6 @@ firstBefore = v3.FirstVisibleChannel;
 v3.KeyMapObj.dispatch(v3.Figure, struct('Key', 'downarrow', 'Modifier', {{}}));
 check(v3.FirstVisibleChannel == firstBefore + 1, 'KeyMap dispatch of downarrow scrolls channels');
 
-v3.Mods = string.empty(1, 0);
 v3.Figure.WindowKeyPressFcn(v3.Figure, struct('Key', 'x', 'Modifier', {{'alt'}}));
 check(any(v3.Mods == "alt"), 'non-shortcut keypress still reaches the modifier tracker via KeyMap chaining');
 
@@ -188,6 +187,81 @@ try
 catch ME
     check(strlength(string(ME.identifier)) > 0, 'bare-axes Parent + DigitalData raises a clear error');
 end
+
+%% 11. Channel display order (setChannelOrder) --------------------------------
+fprintf('\n== 11. Channel display order ==\n');
+nCh6 = 6;
+X6 = synthData(nSamp, nCh6, Fs);
+v6 = MultiChannelViewer(X6, Fs, VisibleChannels=nCh6);
+check(isequal(v6.ChannelOrder, double.empty(1,0)), 'ChannelOrder starts empty (natural order)');
+
+revOrder = nCh6:-1:1;
+v6.setChannelOrder(revOrder);
+check(isequal(v6.ChannelOrder, revOrder), 'setChannelOrder stores the permutation');
+check(isequal(v6.Axes.YTickLabel, cellstr(v6.ChannelNames(revOrder)).'), ...
+    'YTickLabels follow the reordered channels (traces)');
+
+v6.setMode("heatmap");
+check(isequal(v6.Axes.YTickLabel, cellstr(v6.ChannelNames(revOrder)).'), ...
+    'YTickLabels follow the reordered channels (heatmap)');
+v6.setMode("traces");
+linesRev = v6.Lines;   % re-baseline: setMode legitimately recreates the lines
+
+v6.setChannelOrder([]);
+check(isequal(v6.ChannelOrder, double.empty(1,0)), 'setChannelOrder([]) restores natural order');
+check(isequal(v6.Axes.YTickLabel, cellstr(v6.ChannelNames(1:nCh6)).'), ...
+    'YTickLabels back to natural order after clearing ChannelOrder');
+check(isequal(linesRev, v6.Lines), 'Lines handles unchanged by reordering (in-place update)');
+
+try
+    v6.setChannelOrder([1 2 3]);   % wrong length
+    check(false, 'non-permutation order should have errored');
+catch ME
+    check(strlength(string(ME.identifier)) > 0, 'non-permutation order raises a clear error');
+end
+
+X7 = synthData(nSamp, nCh6, Fs);
+v6.loadData(X7, Fs);
+check(isequal(v6.ChannelOrder, double.empty(1,0)), 'loadData resets ChannelOrder to natural order');
+
+%% 12. Color by group (e.g. probe shank) ---------------------------------------
+fprintf('\n== 12. Color by group ==\n');
+check(isequal(v6.ChannelGroups, double.empty(1,0)), 'ChannelGroups starts empty');
+check(v6.ColorByGroup == false, 'ColorByGroup starts false');
+
+groups = [1 1 2 2 3 3];   % raw-channel (data-column) group ids
+v6.setChannelGroups(groups);
+check(isequal(v6.ChannelGroups, groups), 'setChannelGroups stores the group ids');
+
+colorsBefore = get(v6.Lines, 'Color');
+v6.setColorByGroup(true);
+check(v6.ColorByGroup == true, 'setColorByGroup(true) sets ColorByGroup');
+colorsAfter = get(v6.Lines, 'Color');
+check(~isequal(colorsBefore, colorsAfter), 'enabling ColorByGroup changes line colors in place');
+check(isequal(v6.Lines(1).Color, v6.Lines(2).Color), 'channels sharing a group get the same color (ch1,ch2)');
+check(isequal(v6.Lines(3).Color, v6.Lines(4).Color), 'channels sharing a group get the same color (ch3,ch4)');
+check(~isequal(v6.Lines(1).Color, v6.Lines(3).Color), 'channels in different groups get different colors');
+
+% Grouping is keyed by raw data column, not display position: reordering
+% display should carry each channel's color with it.
+v6.setChannelOrder(nCh6:-1:1);
+check(isequal(v6.Lines(nCh6).Color, v6.Lines(nCh6 - 1).Color), ...
+    'group coloring follows the raw channel through a display reorder');
+v6.setChannelOrder([]);
+
+v6.setColorByGroup(false);
+colorsOff = get(v6.Lines, 'Color');
+check(isequal(colorsBefore, colorsOff), 'disabling ColorByGroup restores the default per-line palette');
+
+try
+    v6.setChannelGroups([1 2 3]);   % wrong length
+    check(false, 'wrong-length group list should have errored');
+catch ME
+    check(strlength(string(ME.identifier)) > 0, 'wrong-length group list raises a clear error');
+end
+
+v6.loadData(synthData(nSamp, nCh6, Fs), Fs);
+check(isequal(v6.ChannelGroups, double.empty(1,0)), 'loadData resets ChannelGroups to empty');
 
 %% Summary -------------------------------------------------------------------
 fprintf('\n================  %d passed, %d failed  ================\n', nPass, nFail);
