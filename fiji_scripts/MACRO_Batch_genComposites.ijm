@@ -5,14 +5,20 @@
 File.setDefaultDirectory("C:/Users/dstolz/My Drive/PROJECTS/NIHL ECM/IMAGES");
 dir = getDirectory("Choose the top-level directory");
 searchString = getString("Enter search string to filter CZI files", "");
-processFolder(dir, searchString);
 
-function processFolder(folder, searchString) {
+Dialog.create("Z3 Processing Mode");
+Dialog.addRadioButtonGroup("Z3 stack handling", newArray("Middle Z section", "Z-projection (Sum Slices)"), 2, 1, "Middle Z section");
+Dialog.show();
+z3Mode = Dialog.getRadioButton();
+
+processFolder(dir, searchString, z3Mode);
+
+function processFolder(folder, searchString, z3Mode) {
     list = getFileList(folder);
     for (i = 0; i < list.length; i++) {
         path = folder + list[i];
         if (File.isDirectory(path)) {
-            processFolder(path, searchString); // recurse into subfolders
+            processFolder(path, searchString, z3Mode); // recurse into subfolders
         } else if (endsWith(path, ".czi")) {
             // Skip files that don't match the search string (if provided)
             if (searchString != "" && indexOf(path, searchString) == -1) {
@@ -30,12 +36,16 @@ function processFolder(folder, searchString) {
             }
             else if (indexOf(path, "Z3") != -1) {
                 baseName = extractBaseName(path);
-                outPath = getOutputPath(path, baseName + "_proj.tif");
+                if (z3Mode == "Z-projection (Sum Slices)") {
+                    outPath = getOutputPath(path, baseName + "_proj.tif");
+                } else {
+                    outPath = getOutputPath(path, baseName + "_mid.tif");
+                }
                 if (File.exists(outPath)) {
                     print("Skipping existing Z3 processed file: " + outPath);
                     continue;
                 }
-                processZ3File(path);
+                processZ3File(path, z3Mode);
                 run("Close All");
             } else if (indexOf(path, "Z1") != -1) {
                 baseName = extractBaseName(path);
@@ -81,32 +91,29 @@ function processSLIDEFile(path) {
     run("Close All");
 }
 
-function processZ3File(path) {
+function processZ3File(path, z3Mode) {
     print("Processing Z3 file: " + path);
 
     baseName = extractBaseName(path);
 
-    run("Bio-Formats Importer", 
+    run("Bio-Formats Importer",
         "open=[" + path + "] autoscale color_mode=Colorized view=Hyperstack stack_order=XYCZT");
 
     origID = getImageID();
     origTitle = getTitle();
     print("Opened image: " + origTitle);
 
-    // select only the second channel (Z3) for projection
-    run("Duplicate...", "title=Middle_Z duplicate channels=1-2 slices=2 frames=1");
+    if (z3Mode == "Z-projection (Sum Slices)") {
+        // Generate Z-projection across all slices
+        run("Duplicate...", "title=Z_Proj duplicate channels=1-2 frames=1");
+        run("Z Project...", "projection=[Sum Slices]");
+        outName = baseName + "_proj.tif";
+    } else {
+        // select only the middle Z slice (Z3) for projection
+        run("Duplicate...", "title=Middle_Z duplicate channels=1-2 slices=2 frames=1");
+        outName = baseName + "_mid.tif";
+    }
 
-    outName = baseName + "_mid.tif";
-
-
-    // Generate Z-projection on a duplicate
-    //run("Duplicate...", "duplicate");
-    //run("Z Project...", "projection=[Sum Slices]");
-    //projTitle = getTitle();
-    //print("Z-projected image: " + projTitle);
-    //
-    //outName = baseName + "_proj.tif";
-    
     outPath = getOutputPath(path, outName);
 
     print("Saving to: " + outPath);
