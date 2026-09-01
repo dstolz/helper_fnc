@@ -246,7 +246,7 @@ classdef KeyMap < handle
             elseif isobject(target) && isprop(target, 'UIFigure')
                 fig = target.UIFigure;                     % App Designer app
             elseif isobject(target) && isprop(target, 'Fig')
-                fig = target.Fig;                          % e.g. ECMAnalysisApp
+                fig = target.Fig;                          % e.g. ECMBrowser
             elseif isobject(target) && isprop(target, 'FigureHandle')
                 fig = target.FigureHandle;                 % e.g. InteractiveRotator
             else

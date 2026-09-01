@@ -1,30 +1,32 @@
 %%
 
-histologyPath = "D:/GM6001_HISTOLOGY/";
-metaDataFile = "D:/GM6001_HISTOLOGY/Trackers - Sections.csv";
+startup
+
+addpath('C:\src\histology_browser\')
+% addpath('C:\src\histology_browser\.claude\worktrees\published-tracker')
+addpath_nogit('c:\src\bfmatlab')
+
+HistologyImageBrowser;
+
+
+%% Save exported histology data
+save("histology_ACxProfiles_260901.mat","histology")
+
+%% Reload histology data and combine with ECM Projects csv
+load("histology_ACxProfiles_260901.mat")
+
+
+
+
 projectFile = "D:/GM6001_HISTOLOGY/ECM Projects - GM6001.csv";
 
-% histologyPath = "C:/Users/dstolz/My Drive/PROJECTS/GM6001/HISTOLOGY/";
-% metaDataFile = "C:/Users/dstolz/My Drive/PROJECTS/GM6001/HISTOLOGY/Trackers - Sections.csv";
-
-
-% combine_values_csv lives in the histology_browser repo, not here.
-if exist("combine_values_csv", "file") ~= 2
-    error("S_ECManalysis:MissingDependency", ...
-        "combine_values_csv not found. Add the histology_browser repository to the MATLAB path.")
-end
-
-S = combine_values_csv(histologyPath, metadataCSV = metaDataFile);
-
-ind = endsWith(S.combined.("Processing ID"),"IHC_ECM26A260727S1");
-% ind = endsWith(S.combined.("Processing ID"),"IHC_ECM26A260519S2");
-
-S.combined(~ind,:) = [];
 
 S.Project = readtable(projectFile,"TextType","string");
 
 
-%% attach project info (drug/vehicle assigned per hemisphere)
+
+
+% attach project info (drug/vehicle assigned per hemisphere)
 
 % "Left"/"Right" in the project sheet -> "L"/"R" used in the image filenames
 hemiCode = @(s) regexprep(strtrim(string(s)), "^(L|R).*$", "$1", "ignorecase");
@@ -55,141 +57,151 @@ Pctl.Treatment  = repmat("None",height(Pctl),1);
 Plong = [Pveh; Pdrug; Pctl];
 Plong(~ismember(Plong.Hemisphere,["L","R"]),:) = [];   % drop uninfused/NA rows
 
-S.combined = outerjoin(S.combined, Plong, ...
+histology = outerjoin(histology, Plong, ...
     Keys = ["SubjectID","Hemisphere"], ...
     MergeKeys = true, ...
     Type = "left");
 
-ind = S.combined.Treatment == "None";
-S.combined.Treatment(ind) = "Control " + S.combined.Hemisphere(ind);
+ind = histology.Treatment == "None";
+histology.Treatment(ind) = "Control " + histology.Hemisphere(ind);
+
+
+
+
+
+
+
+
+
+
+%%
 
 %% prep data for analysis
 
-voi = ["SubjectID", "Atlas Plate #", "Treatment"];
-% voi = ["SubjectID", "Atlas Plate #", "Hemisphere"];
+voi = ["SubjectID", "AtlasPlate", "Treatment"];
+% voi = ["SubjectID", "AtlasPlate", "Hemisphere"];
 
 
 
-plotType = "mean";
-% plotType = "individual";
 
 
-
-A = ecm_prepare_analysis_data(S, ...
+A = ecm_prepare_analysis_data(histology, ...
+    fileVar = "ImagePath", ...
     groupVars = voi, ...
     smoothingMethod = "gaussian", ...
     smoothingWindow = 25, ...
     normalizeMode = "none");
 
 
-a = table2struct(A.aligned,ToScalar = true);
+B = launch_ecm_browser(A);
 
-U = structfun(@unique,a,'uni',0);
-U = orderfields(U);
-N = structfun(@numel,U,'uni',0);
 
-% inspect results
 
-depthLimit = 1340; % microns from surface
+%% inspect results
+% A.grid puts every section on one depth axis -- one column per section -- so
+% sections measured over different lengths can be averaged without resampling
+% them here, which is what the old sample-by-sample assembly assumed.
+
+
+plotType = "mean";
+% plotType = "individual";
+
+
+depthLimit = 1500; % microns from cortical surface
+
+inDepth = A.grid.depth >= 0 & A.grid.depth <= depthLimit;
+
+depth = A.grid.depth(inDepth);
+Y = A.grid.raw(inDepth, :);   % A.grid.smoothed for the smoothed traces
+F = A.grid.files;             % one row per section, in the column order of Y
+
+% Project columns are missing for any section the tracker did not match.
+label = @(s) fillmissing(string(s), "constant", "n/a");
+
+rois = unique(F.ROILabel);
+plates = unique(F.AtlasPlate);
+subjects = unique(F.SubjectID);
+treatments = unique(F.Treatment);
+
+cm = lines(numel(subjects));
 
 clf
 t = tiledlayout('flow');
 
-cm = lines(N.SubjectID);
+for r = 1:numel(rois)
+    for i = 1:numel(plates)
+        ax = nexttile;
+        hold(ax, 'on')
 
-for r = 1:N.ROI
-    for i = 1:N.AtlasPlate_
-        nexttile
+        for k = 1:numel(subjects)
 
-        for k = 1:N.SubjectID
+            for h = 1:numel(treatments)
+                sel = find(F.ROILabel == rois(r) ...
+                    & F.AtlasPlate == plates(i) ...
+                    & F.SubjectID == subjects(k) ...
+                    & F.Treatment == treatments(h));
 
-            for h = 1:N.Treatment
-                ind = a.AtlasPlate_ == U.AtlasPlate_(i) ...
-                    & a.ROI == U.ROI(r) ...
-                    & a.SubjectID == U.SubjectID(k) ...
-                    & a.Treatment == U.Treatment(h);
+                if isempty(sel), continue; end
 
-                if ~any(ind), continue; end
+                switch plotType
+                    case "individual"
+                        for j = 1:numel(sel)
+                            c = sel(j);
 
-                Asub = A.aligned(ind,:);
+                            line(ax, depth, Y(:, c), ...
+                                Color = cm(k, :), ...
+                                DisplayName = sprintf('%s-%s-%s', ...
+                                F.SubjectID(c), F.SectionID(c), F.Treatment(c)))
+                        end
 
-                fid = Asub.file_id;
-                ufid = unique(fid);
+                    case "mean"
+                        c = sel(1);
 
-                for j = 1:length(ufid)
-                    indf = fid == ufid(j);
+                        y_mean = mean(Y(:, sel), 2, "omitnan");
+                        y_std = std(Y(:, sel), 0, 2, "omitnan");
 
-                    x = Asub.aligned_distance(indf);
-                    y = Asub.intensity_raw(indf);
-                    % y = Asub.intensity_smoothed(indf);
+                        % patch(ax, [depth; flipud(depth)], [y_mean+y_std; flipud(y_mean-y_std)], ...
+                        %     cm(k,:), EdgeColor = 'none', FaceAlpha = 0.3, HandleVisibility = 'off')
 
-                    indx = x >= 0 & x <= depthLimit;
+                        lh = line(ax, depth, y_mean, ...
+                            LineWidth = 2, ...
+                            Color = cm(k, :), ...
+                            DisplayName = sprintf('%s - %s %s (%s, n=%d)', ...
+                            F.SubjectID(c), F.Treatment(c), F.Hemisphere(c), ...
+                            label(F.InfusionQuality(c)), numel(sel)));
 
-                    if j == 1
-                        yM = nan(sum(indx),length(ufid));
-                        xM = yM;
-                    end
-                    yM(:,j) = y(indx);
-                    xM(:,j) = x(indx);
-
-                    if plotType == "individual"
-                        idx = find(indf,1);
-                        dnstr = sprintf('%s-%s-%s',Asub.SubjectID(idx),Asub.SectionID(idx),Asub.Treatment(idx));
-
-                        line(x,y, ...
-                            Color = cm(k,:), ...
-                            DisplayName = dnstr)
-                    end
+                        if ismember(F.Treatment(c), ["GM6001", "Control R"])
+                            lh.LineStyle = '--';
+                        end
                 end
+            end % h: treatment
+        end % k: subject
 
-                if plotType == "mean"
-                    idx = find(indf,1);
-                    dnstr = sprintf('%s - %s %c (%s)',Asub.SubjectID(idx),Asub.Treatment(idx),Asub.Hemisphere(idx),Asub.InfusionQuality(idx));
+        if isempty(ax.Children)
+            continue
+        end
 
+        if plotType == "individual"
+            xline(ax, 0, HandleVisibility = "off")
+            xregion(ax, [0 depthLimit], ...
+                FaceColor = [0.9 0.9 0.9], ...
+                HandleVisibility = "off")
+        end
 
-                    y_mean = mean(yM,2).';
-                    y_std = std(yM,0,2).';
-                    x_ = linspace(0,depthLimit,length(y_mean));
-
-                    x_p = [x_ fliplr(x_)];
-                    y_std_p = [y_mean+y_std fliplr(y_mean-y_std)];
-
-                    % patch(x_p,y_std_p,[0 0 0], ...
-                    %     EdgeColor = 'none', ...
-                    %     FaceColor = cm(k,:), ...
-                    %     FaceAlpha = 0.3, ...
-                    %     HandleVisibility = 'off')
-
-                    lh = line(x_,y_mean, ...
-                        LineWidth = 2, ...
-                        Color = cm(k,:), ...
-                        DisplayName = dnstr);
-                    if Asub.Treatment(idx) == "GM6001" || Asub.Treatment(idx) == "Control R"
-                        lh.LineStyle = '--';
-                    end
-
-                end
-            end % h: hemisphere
-
-            if plotType == "individual"
-                xline(0,HandleVisibility="off")
-                xregion([0 depthLimit], ...
-                    FaceColor = [0.9 0.9 0.9], ...
-                    HandleVisibility="off")
-            end
-
-            titlef('%s -- Atlas Plate #%d',U.ROI(r),U.AtlasPlate_(i))
-            legend
-            grid on
-
-            axis tight
-            box on
-        end % k: SubjectID
+        titlef(ax, '%s -- AtlasPlate %d', rois(r), plates(i))
+        legend(ax)
+        grid(ax, 'on')
+        box(ax, 'on')
+        axis(ax, 'tight')
     end % i: AtlasPlate
-end
-linkaxes(t.Children)
+end % r: ROI
 
-ylabel(t,'raw fluorescence')
-xlabel(t,'depth from cortical surface (\mum)')
-title(t,'ECM expression in ACx')
-subtitle(t,'Untrained Controls: SUBJ-ID-1127 & 1161')
+linkaxes(findobj(t, 'Type', 'axes'))   % the layout also holds each tile's legend
+
+ylabel(t, 'raw fluorescence')
+xlabel(t, 'depth from cortical surface (\mum)')
+title(t, 'ECM expression in ACx')
+subtitle(t, 'Untrained Controls: SUBJ-ID-1127 & 1161')
+
+
+%%
