@@ -50,7 +50,7 @@ function buildStatusBar(obj, parent)
 %buildStatusBar  Status strip along the bottom of the figure.
 %   Left label reports the last action / current state; the right label offers a
 %   suggested next step (updated by setStatus / suggestNextStep). The two are
-%   colour-coded so the "what happened" and "what to do next" read distinctly.
+%   color-coded so the "what happened" and "what to do next" read distinctly.
 panel = uipanel(parent, "BorderType", "line", ...
     "BackgroundColor", [0.96 0.96 0.98]);
 panel.Layout.Row = 2; panel.Layout.Column = 1;

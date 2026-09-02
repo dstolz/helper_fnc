@@ -1,5 +1,5 @@
 function renderHeatmap(obj, seg, tt, chIdx)
-%renderHeatmap  One row per visible channel, colour = amplitude, columns
+%renderHeatmap  One row per visible channel, color = amplitude, columns
 %   binned to the pixel budget. Reuses the existing image object across
 %   redraws (CData/XData/YData updated in place).
 

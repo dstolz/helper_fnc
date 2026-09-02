@@ -433,7 +433,7 @@ def prompt_user_parameters():
 # -----------------------------------------------------------------------------
 params = prompt_user_parameters()
 if params is None:
-    print("Cylinder assembly creation cancelled.")
+    print("Cylinder assembly creation canceled.")
 else:
     START_MARKUP_NAME = params["markup_name"]
     GUIDE_CANNULA_DIAMETER_MM = params["guide_cannula_diameter_mm"]

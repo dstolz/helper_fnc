@@ -131,7 +131,7 @@ try
         Xi = Xi(:, chans);                  % keep only requested channels
 
         % Preprocess this file's chunk (single precision); filter per-file
-        % (independent edges, matching toBin's default streaming behaviour).
+        % (independent edges, matching toBin's default streaming behavior).
         Xi = preprocessChunk(d, Xi, pp, FsTrue);
 
         if decim > 1
@@ -207,7 +207,7 @@ try
     end
 
     % Apply the Start/Window fields and reset gain/offset fresh on every plot,
-    % matching the previous behaviour.
+    % matching the previous behavior.
     obj.Viewer.TimeWindowDuration = tWin;
     obj.Viewer.TimeWindowStart = tLeft;
     obj.Viewer.AmpGain = 1;

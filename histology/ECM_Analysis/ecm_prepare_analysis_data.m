@@ -511,12 +511,12 @@ reference = ySmooth(inDepth);
 
 switch normalizeMode
     case "zscore"
-        centre = mean(reference, "omitnan");
+        center = mean(reference, "omitnan");
         scale = std(reference, "omitnan");
 
     case "minmax"
-        centre = min(reference);
-        scale = max(reference) - centre;
+        center = min(reference);
+        scale = max(reference) - center;
 
     otherwise
         return
@@ -526,8 +526,8 @@ if ~isfinite(scale) || scale <= 0
     scale = 1;
 end
 
-y = (y - centre) ./ scale;
-ySmooth = (ySmooth - centre) ./ scale;
+y = (y - center) ./ scale;
+ySmooth = (ySmooth - center) ./ scale;
 
 end
 

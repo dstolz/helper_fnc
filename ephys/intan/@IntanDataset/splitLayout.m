@@ -13,7 +13,7 @@ function L = splitLayout(obj)
 %     one-file-per-signal   amplifier.dat  [nChan x nSamp] int16, channel-major
 %                           per sample (channel index varies fastest on disk)
 %     one-file-per-channel  amp-<native>.dat  one int16 file per amplifier channel
-%   In both layouts microvolts = 0.195 * int16 (the samples are already centred,
+%   In both layouts microvolts = 0.195 * int16 (the samples are already centered,
 %   so there is NO 32768 offset, unlike the offset-binary uint16 in the *.rhd
 %   blocks). Sample counts are derived from the .dat file size(s), not the header
 %   (which carries no data).

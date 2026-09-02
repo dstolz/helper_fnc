@@ -37,7 +37,7 @@ function [mask, intervals, stats] = detectArtifacts(obj, X, opts)
 %   padMs, fraction (of samples flagged), numIntervals, and
 %   channelExceedCounts [1 x nChan] - the number of samples each channel
 %   exceeded its threshold (before the MinChannels combination), used to
-%   summarise artifacts per channel.
+%   summarize artifacts per channel.
 %
 %   See also IntanDataset.blankArtifacts, IntanDataset.toBin, IntanDataset.analyzeArtifacts.
 

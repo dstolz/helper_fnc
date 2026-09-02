@@ -19,7 +19,7 @@ if nargin == 0 || isempty(rootDir)
     if ~isfolder(startDir), startDir = cd; end
     p = uigetdir(startDir, 'Select repository main directory');
     if isequal(p,0)
-        fprintf('Selection cancelled. No changes made.\n');
+        fprintf('Selection canceled. No changes made.\n');
         return
     end
     rootDir = p;
@@ -42,7 +42,7 @@ if options.useGUI
     [idx, ok] = listdlg('ListString', names, 'SelectionMode','single', ...
                         'PromptString','Select a release', 'ListSize',[320 420]);
     if ~ok || isempty(idx)
-        fprintf('Selection cancelled. No changes made.\n');
+        fprintf('Selection canceled. No changes made.\n');
         return
     end
     relName = names{idx};

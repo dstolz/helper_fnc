@@ -23,7 +23,7 @@ var IN_PROGRESS_MARKER_NAME = "_PHOTOMERGE_IN_PROGRESS.txt";
 
 // Safety / operational controls
 var ENABLE_LIVE_LOGGING = true;          // Write each log line immediately to disk
-var CREATE_IN_PROGRESS_MARKER = true;    // Leaves a breadcrumb if Photoshop stalls or is cancelled
+var CREATE_IN_PROGRESS_MARKER = true;    // Leaves a breadcrumb if Photoshop stalls or is canceled
 var PURGE_CACHES_BETWEEN_FOLDERS = true; // Helps long runs avoid cache buildup
 var RUN_GARBAGE_COLLECTION = true;       // ExtendScript GC hint between folders
 
@@ -445,7 +445,7 @@ function main() {
 
     CURRENT_ALIGNMENT = promptAlignmentMode();
     if (CURRENT_ALIGNMENT === null) {
-        alert("Operation cancelled.");
+        alert("Operation canceled.");
         return;
     }
 
@@ -453,7 +453,7 @@ function main() {
 
     var parentFolder = Folder.selectDialog("Select the parent folder containing subfolders for batch Photomerge");
     if (!parentFolder) {
-        alert("No folder selected. Operation cancelled.");
+        alert("No folder selected. Operation canceled.");
         return;
     }
 

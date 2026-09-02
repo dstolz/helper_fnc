@@ -35,7 +35,7 @@ function data = readData(obj, opts)
 %
 %   Digital events follow intan2matlab: the dig-in channel count is fixed from
 %   the FIRST file (later extra lines are ignored), contiguous high segments
-%   are labelled with bwlabel (diff-based fallback if Image Processing Toolbox
+%   are labeled with bwlabel (diff-based fallback if Image Processing Toolbox
 %   is unavailable), and times are reported in seconds on the original Fs grid.
 %
 %   See also READ_INTAN_RHD2000_FILE_MODIFIED, MATRIX2KILOSORT, EXTRACT_TRIALS.

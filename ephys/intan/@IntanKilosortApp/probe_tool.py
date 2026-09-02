@@ -213,7 +213,7 @@ def cmd_describe(args):
 
 
 # --------------------------------------------------------------------------
-# tiny arg helpers (no argparse: keep behaviour identical across py versions)
+# tiny arg helpers (no argparse: keep behavior identical across py versions)
 # --------------------------------------------------------------------------
 def _opt(args, flag):
     if flag in args:

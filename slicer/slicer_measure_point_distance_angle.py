@@ -277,7 +277,7 @@ def show_results_dialog(start_info, finish_info, measurements, line_node=None):
 
 params = prompt_user_parameters()
 if params is None:
-    print("Distance and angle measurement cancelled.")
+    print("Distance and angle measurement canceled.")
 else:
     start_info = get_point_from_selector(params["start_selector"])
     finish_info = get_point_from_selector(params["finish_selector"])

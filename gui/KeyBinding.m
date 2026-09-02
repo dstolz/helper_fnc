@@ -1,6 +1,6 @@
 classdef KeyBinding < handle
     % KeyBinding  A single GUI key binding (key + modifiers + action).
-    %   Encapsulates the properties and behaviour of one keyboard shortcut:
+    %   Encapsulates the properties and behavior of one keyboard shortcut:
     %   which key/modifiers trigger it, what callback runs, and how it is
     %   described in a help dialog. Used by KeyMap, which manages a collection
     %   of KeyBinding objects and attaches them to a figure or app.

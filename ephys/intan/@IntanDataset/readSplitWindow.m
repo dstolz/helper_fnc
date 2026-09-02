@@ -9,7 +9,7 @@ function X = readSplitWindow(obj, sampleOffset, nSamp)
 %   in memory, so peak usage never scales with the whole recording length.
 %
 %   Scaling mirrors the Intan convention for the split formats: microvolts =
-%   0.195 * int16 (the on-disk samples are already centred; there is no 32768
+%   0.195 * int16 (the on-disk samples are already centered; there is no 32768
 %   offset, unlike the offset-binary uint16 stored in traditional *.rhd blocks).
 %   Channels are returned in header order (the same order used by NumChannels /
 %   ChannelNames and by toBin's .bin rows); apply any ChannelOrder/exclusion at

@@ -23,7 +23,7 @@ load("histology_ACxProfiles_260901.mat")
 projectFile = "D:/GM6001_HISTOLOGY/ECM Projects - GM6001.csv";
 
 
-S.Project = readtable(projectFile,"TextType","string");
+P = readtable(projectFile,"TextType","string");
 
 
 
@@ -33,8 +33,8 @@ S.Project = readtable(projectFile,"TextType","string");
 % "Left"/"Right" in the project sheet -> "L"/"R" used in the image filenames
 hemiCode = @(s) regexprep(strtrim(string(s)), "^(L|R).*$", "$1", "ignorecase");
 
-P = S.Project(S.Project.SubjectID ~= "" & ~ismissing(S.Project.SubjectID), :);
-projVars = ["SubjectID", "Condition", "Sex", "InfusionQuality", "GM6001Molarity_uM_"];
+P = P(P.SubjectID ~= "" & ~ismissing(P.SubjectID), :);
+projVars = ["SubjectID", "Condition", "LeftCannulaPlate", "RightCannulaPlate", "Sex", "InfusionQuality", "GM6001Molarity_uM_","IncludeInAnalysis"];
 
 % reshape to one row per (subject, hemisphere) so the drug/vehicle columns
 % land on the hemisphere they were actually infused into
@@ -67,6 +67,13 @@ histology = outerjoin(histology, Plong, ...
 ind = histology.Treatment == "None";
 histology.Treatment(ind) = "Control " + histology.Hemisphere(ind);
 
+% cannula distance
+d = nan(size(histology,1),1);
+ind = histology.Hemisphere == "L";
+d(ind) = histology.AtlasPlate(ind) - histology.LeftCannulaPlate(ind);
+ind = histology.Hemisphere == "R";
+d(ind) = histology.AtlasPlate(ind) - histology.RightCannulaPlate(ind);
+histology.CannulaDist = d;
 
 
 %% prep data for analysis

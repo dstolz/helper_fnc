@@ -315,7 +315,7 @@ classdef DatasetTracker < handle
 
         function runs = discoverKilosortRuns(obj)
             %discoverKilosortRuns  Find kilosort4 output folders and their state.
-            %   A run folder is any directory containing a recognised Kilosort4
+            %   A run folder is any directory containing a recognized Kilosort4
             %   marker (spike output, the generated run script/settings, or the
             %   status file). State and the input bin/probe come from the files
             %   runKilosort writes (ks4_status.json / settings.json).

@@ -102,7 +102,7 @@ classdef DataPrefs < handle
             if (xmlFilename == "" || isequal(xmlFilename,[])) && ~isempty(Files)
                 [f,p] = uiputfile('*.xml','Save XML file as');
                 if isequal(f,0) || isequal(p,0)
-                    error('DataPrefs:NoFileSelected','User cancelled.');
+                    error('DataPrefs:NoFileSelected','User canceled.');
                 end
                 newXML = fullfile(p,f);
                 obj    = DataPrefs.filenames2xml(Files, string(newXML), defaultFields);
@@ -124,7 +124,7 @@ classdef DataPrefs < handle
             if xmlFilename == "" && (isempty(Files) || isequal(Files,[]))
                 [f,p] = uigetfile('*.xml','Select XML file');
                 if isequal(f,0) || isequal(p,0)
-                    error('DataPrefs:NoFileSelected','User cancelled.');
+                    error('DataPrefs:NoFileSelected','User canceled.');
                 end
                 xmlFile          = fullfile(p,f);
                 obj.xmlFile      = string(xmlFile);

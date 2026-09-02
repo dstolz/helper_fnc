@@ -1,5 +1,5 @@
 function summary = analyzeArtifacts(obj, opts)
-%analyzeArtifacts  Summarise automatic artifact detection over the recording.
+%analyzeArtifacts  Summarize automatic artifact detection over the recording.
 %   SUMMARY = ds.analyzeArtifacts() streams the recording one chunk at a time
 %   (per *.rhd file for the traditional format, or bounded sample windows for the
 %   split formats - the same one-chunk-in-memory invariant toBin relies on), runs
@@ -29,7 +29,7 @@ function summary = analyzeArtifacts(obj, opts)
 %     fraction       nBlanked / nSamples
 %     pctDuration    100 * fraction
 %     nIntervals     number of contiguous artifact intervals (summed per file)
-%     files          files analysed
+%     files          files analyzed
 %
 %   See also IntanDataset.detectArtifacts, IntanDataset.toBin.
 

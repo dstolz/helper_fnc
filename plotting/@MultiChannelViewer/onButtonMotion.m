@@ -5,7 +5,7 @@ function onButtonMotion(obj)
 %   always pans time. Vertical motion scrolls the channel window when the
 %   channel axis is currently windowed (NumVisibleChannels < NumChannels, in
 %   either Mode); otherwise it pans the amplitude baseline in traces mode
-%   (unchanged legacy behaviour), and is a no-op in heatmap mode.
+%   (unchanged legacy behavior), and is a no-op in heatmap mode.
 
 P = obj.Pan;
 if ~isstruct(P) || ~isfield(P, 'active') || ~P.active; return; end

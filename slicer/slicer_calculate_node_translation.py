@@ -296,7 +296,7 @@ def show_results_dialog(
 
 params = prompt_user_parameters()
 if params is None:
-    print("Translation calculation cancelled.")
+    print("Translation calculation canceled.")
 else:
     start_info = get_point_from_selector(params["start_selector"])
     finish_info = get_point_from_selector(params["finish_selector"])

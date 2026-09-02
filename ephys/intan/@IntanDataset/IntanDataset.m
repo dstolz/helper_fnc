@@ -47,7 +47,7 @@ classdef IntanDataset < handle
         %   "traditional"         one or more *.rhd files with embedded data
         %   "one-file-per-signal" info.rhd + amplifier.dat (+ other signal .dat)
         %   "one-file-per-channel" info.rhd + amp-*.dat (one file per channel)
-        %   "unknown"             no recognised Intan files
+        %   "unknown"             no recognized Intan files
         % Recorded in the manifest so the GUI shows the layout even for formats
         % whose amplifier data is not yet read in-process.
         RecordingFormat (1,1) string = "traditional"
@@ -226,7 +226,7 @@ classdef IntanDataset < handle
                     obj.NumFiles = numel(D);
                     obj.AcqDate = datetime(min([D.datenum]), 'ConvertFrom', 'datenum');
 
-                otherwise   % "unknown" - no recognised Intan files
+                otherwise   % "unknown" - no recognized Intan files
                     obj.Files = string.empty(1,0);
                     obj.NumFiles = 0;
             end
@@ -449,7 +449,7 @@ classdef IntanDataset < handle
 
         function cfg = defaultArtifactConfig()
             %defaultArtifactConfig  Default automatic artifact-detection settings.
-            %   Used to initialise ArtifactConfig. RmsWindowMs/MergeGapMs/PadMs
+            %   Used to initialize ArtifactConfig. RmsWindowMs/MergeGapMs/PadMs
             %   are in milliseconds (converted to samples with Fs at run time);
             %   RmsWindowMs NaN means "auto" (~1 ms).
             cfg = struct( ...
@@ -484,7 +484,7 @@ classdef IntanDataset < handle
 
         function cfg = defaultSIConfig()
             %defaultSIConfig  Default SpikeInterface preprocessing settings.
-            %   Used to initialise SIConfig and consumed by runSpikeInterface.
+            %   Used to initialize SIConfig and consumed by runSpikeInterface.
             %   Kilosort4 still high-pass filters and whitens internally, so the
             %   SI bandpass is OFF by default (enabling it risks double-filtering)
             %   and common reference is OFF; automatic bad-channel detection is ON
