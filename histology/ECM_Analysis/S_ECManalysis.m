@@ -76,7 +76,7 @@ d(ind) = histology.AtlasPlate(ind) - histology.RightCannulaPlate(ind);
 histology.CannulaDist = d;
 
 
-%% prep data for analysis
+% prep data for analysis
 
 voi = ["SubjectID", "AtlasPlate", "Treatment"];
 % voi = ["SubjectID", "AtlasPlate", "Hemisphere"];
