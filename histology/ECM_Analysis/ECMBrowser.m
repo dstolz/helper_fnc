@@ -48,15 +48,17 @@ classdef ECMBrowser < handle
 %               one -- plate and subject, say -- and every combination the
 %               sections actually hold gets an axes of its own: the last field
 %               runs across the columns and the ones before it down the rows,
-%               so a column can be read from row to row.
+%               so a column can be read from row to row. Transpose swaps
+%               the two.
 %   Filter      One field, and which of its values to keep.
 %   Depth       The depth window drawn, in the profiles' own distance unit.
-%   Transpose   Turns the plot on its side: depth runs down the vertical
-%               axis, surface at the top and deeper below it, the way a
-%               section is looked at, and the intensity runs across. It is
-%               a choice about how the plot is read rather than what is in
-%               it, so everything else -- the normalization, the tiling,
-%               the legend, an export -- is unchanged by it.
+%   Transpose   Turns the grid of axes on its side: the field that ran
+%               across the columns runs down the rows instead, and the ones
+%               before it across the columns. It rearranges the axes rather
+%               than what is drawn in them, so everything else -- the
+%               normalization, the curves, the legend, an export -- is
+%               unchanged by it. One tiled field flows across the layout
+%               untransposed and stacks into a single column transposed.
 %   Legend      Where the key goes. Per tile is one legend inside every axes,
 %               as it has always been; the two consolidated placements draw a
 %               single legend outside them all -- a horizontal band across the
@@ -94,13 +96,21 @@ classdef ECMBrowser < handle
 % against a field this dataset does not have -- a color-by, tile-by, or
 % filter field from a different one -- is left unset rather than refused.
 %
+% A toolbar sits over the plot, holding the things reached for over and over
+% while a figure is being settled on: copy the plot as an image or as vector
+% graphics, save it, copy the numbers under it or the account of the view,
+% send them to the workspace, pop the plot out into a figure of its own, and
+% Reset, which puts the depth window, the scale, and the filter back. All but
+% the last are on the Plot and Data menus as well, spelled out at more length
+% there; the toolbar is the short way to the few that get used every time.
+%
 % Export, on the menu bar, is how anything leaves the browser, and what it
 % sends out is the plot alone -- the panel of controls is how a figure was
 % arrived at, not part of it. The plot is redrawn into a plain figure for
 % each export, at the size it is on screen and on the limits it was left at,
 % so a zoom is exported rather than thrown away and a vector format is
 % available, which it is not from a uifigure. Copy puts it on the clipboard
-% as a bitmap or as vector graphics; Save plot writes PNG, TIFF, or JPEG for
+% as a PNG or as vector graphics; Save plot writes PNG, TIFF, or JPEG for
 % a bitmap, PDF, EPS, or SVG for something that stays sharp at any size, and
 % .fig for the figure itself, still open to editing. Data sends the numbers
 % under the plot the same way: to the base workspace, to the clipboard, or
@@ -109,7 +119,7 @@ classdef ECMBrowser < handle
 % package, or one row per section for the peaks. Image resolution and
 % Background set what the bitmap formats are written at and whether the
 % paper behind the plot is white or left out altogether, which only the
-% vector formats and the clipboard can do; both are kept for the session. Copy view summary writes out every choice that decides what
+% vector formats can do; both are kept for the session. Copy view summary writes out every choice that decides what
 % the plot means, which is what a methods paragraph needs and a screenshot
 % does not hold.
 %
@@ -143,6 +153,9 @@ classdef ECMBrowser < handle
         DepthMinField matlab.ui.control.NumericEditField
         DepthMaxField matlab.ui.control.NumericEditField
         LegendDropDown matlab.ui.control.DropDown
+        SpacingDropDown matlab.ui.control.DropDown
+        PaddingDropDown matlab.ui.control.DropDown
+        TickLabelDropDown matlab.ui.control.DropDown
         LinkCheckBox matlab.ui.control.CheckBox
         TransposeCheckBox matlab.ui.control.CheckBox
         ConfigDropDown matlab.ui.control.DropDown
@@ -212,8 +225,28 @@ classdef ECMBrowser < handle
         % outside the tiles rather than over any one of them.
         LegendPlacements = ["per tile", "one at top", "one at right", "none"]
 
+        % How tightly the tiles are packed and how much room is left around
+        % the grid as a whole, in TILEDLAYOUT's own words for it. The first of
+        % each is what the browser has always drawn at.
+        TileSpacings = ["compact", "tight", "none", "loose"]
+        LayoutPaddings = ["compact", "tight", "loose"]
+
+        % Which tiles carry the numbers on their axes. A grid of linked axes
+        % repeats one set of numbers in every tile, which is a lot of ink for
+        % one scale, so they can be left to the tiles at the edges of the grid
+        % or to the one in its bottom left corner. Reading a tile in the middle
+        % off the edges is only sound while the axes are linked, which is what
+        % the Link axes box is for.
+        TickLabelModes = ["every axis", "left and bottom axes", "bottom left axis only"]
+
         % What marks an artist as belonging to a group, what marks a menu as
         % ours to clear on the next draw, and the line styles on offer.
+        % What MATLAB paints an axis label in when it is left to itself. Said
+        % here because the blank axes an empty cell is given have no axis color
+        % to take it from, and a name in a color of its own on one row of the
+        % grid would read as though it meant something.
+        LabelColor = [0.15 0.15 0.15]
+
         StyleTag = "ECMBrowser:styled"
         MenuTag = "ECMBrowser:stylemenu"
         LineStyleNames = ["Solid", "Dashed", "Dotted", "Dash-dot"]
@@ -459,21 +492,22 @@ classdef ECMBrowser < handle
             f = obj.exportFigure();
             closeWhenDone = onCleanup(@() delete(f));
 
+            note = "";
+
             try
                 if options.ContentType == "vector"
                     copygraphics(f, ContentType = "vector", ...
                         BackgroundColor = obj.backgroundArg())
                 else
-                    copygraphics(f, ContentType = "image", ...
-                        Resolution = obj.ExportResolution, ...
-                        BackgroundColor = obj.backgroundArg())
+                    note = obj.copyImage(f);
                 end
             catch ME
                 uialert(obj.Fig, ME.message, "Could not copy the plot");
                 return
             end
 
-            obj.setStatus("Plot copied to the clipboard as " + options.ContentType + ".");
+            obj.setStatus("Plot copied to the clipboard as " + ...
+                options.ContentType + note + ".");
 
         end
 
@@ -815,14 +849,29 @@ classdef ECMBrowser < handle
             layout.RowHeight = {'1x'};
 
             controls = uipanel(layout, Title = "Display");
-            obj.PlotPanel = uipanel(layout, BorderType = "none");
+
+            % The plot, with the toolbar above it. The two share a column of
+            % their own so that REFRESH can empty the plot panel without
+            % taking the buttons over it down with the plot.
+            plotColumn = uigridlayout(layout, [2 1]);
+            plotColumn.ColumnWidth = {'1x'};
+            plotColumn.RowHeight = {26, '1x'};
+            plotColumn.RowSpacing = 4;
+            plotColumn.Padding = [0 0 0 0];
+
+            obj.buildToolbar(plotColumn);
+            obj.PlotPanel = uipanel(plotColumn, BorderType = "none");
 
             depth = obj.Data.grid.depth;
 
-            grid = uigridlayout(controls, [22 2]);
+            grid = uigridlayout(controls, [24 2]);
             grid.ColumnWidth = {90, '1x'};
-            grid.RowHeight = [repmat({24}, 1, 9), {300}, {24}, {'1x'}, ...
-                repmat({24}, 1, 6), repmat({24}, 1, 3), {40}];
+            % Every row is a fixed height, the filter values list included: a
+            % '1x' row in a scrollable grid is squeezed to nothing as soon as
+            % the fixed rows add up to more than the panel can show, which is
+            % how that list came to be laid out but never drawn.
+            grid.RowHeight = [repmat({24}, 1, 9), {240}, {24}, {140}, ...
+                repmat({24}, 1, 8), repmat({24}, 1, 3), {40}];
             grid.RowSpacing = 6;
 
             % The rows below Tile by add up to more than a window of ordinary
@@ -881,6 +930,8 @@ classdef ECMBrowser < handle
             obj.FilterValuesListBox = uilistbox(grid, ...
                 Items = {}, ...
                 Multiselect = "on", ...
+                Tooltip = "Which of the filter field's values to keep. " + ...
+                    "Empty until a field is picked above.", ...
                 ValueChangedFcn = @(~,~) obj.refresh());
             obj.FilterValuesListBox.Layout.Column = [1 2];
 
@@ -895,6 +946,20 @@ classdef ECMBrowser < handle
                     Tooltip = "One legend per plot, or one for the whole " + ...
                         "figure placed outside the plots."));
 
+            obj.SpacingDropDown = obj.addRow(grid, "Tile spacing", ...
+                @() uidropdown(grid, Items = obj.TileSpacings, ...
+                    Tooltip = "How much room is left between one tile and the next."));
+
+            obj.PaddingDropDown = obj.addRow(grid, "Padding", ...
+                @() uidropdown(grid, Items = obj.LayoutPaddings, ...
+                    Tooltip = "How much room is left around the grid as a whole."));
+
+            obj.TickLabelDropDown = obj.addRow(grid, "Tick labels", ...
+                @() uidropdown(grid, Items = obj.TickLabelModes, ...
+                    Tooltip = "Which tiles carry the numbers on their axes. " + ...
+                        "Reading a tile in the middle off the edges of the " + ...
+                        "grid only holds while the axes are linked."));
+
             obj.LinkCheckBox = uicheckbox(grid, Text = "Link axes", Value = true, ...
                 ValueChangedFcn = @(~,~) obj.refresh());
             obj.LinkCheckBox.Layout.Column = [1 2];
@@ -902,12 +967,10 @@ classdef ECMBrowser < handle
             obj.TransposeCheckBox = uicheckbox(grid, ...
                 Text = "Transpose axes", ...
                 Value = false, ...
-                Tooltip = "Draw depth down the vertical axis, surface at the top.", ...
+                Tooltip = "Lay the axes out the other way round: the field " + ...
+                    "that ran across the columns runs down the rows.", ...
                 ValueChangedFcn = @(~,~) obj.refresh());
             obj.TransposeCheckBox.Layout.Column = [1 2];
-
-            uibutton(grid, Text = "Reset", ButtonPushedFcn = @(~,~) obj.onReset());
-            uibutton(grid, Text = "Pop out", ButtonPushedFcn = @(~,~) obj.popOut());
 
             obj.ConfigDropDown = obj.addRow(grid, "Config", ...
                 @() uidropdown(grid, Items = cellstr(obj.NoConfig), ...
@@ -932,6 +995,69 @@ classdef ECMBrowser < handle
 
             obj.applyDefaults();
             obj.refreshConfigList();
+
+        end
+
+        function buildToolbar(obj, parent)
+            %BUILDTOOLBAR The handful of things done over and over, one click away.
+            % Nothing here is new: every button is an item of the Plot or Data
+            % menu, or one of the two buttons at the foot of the panel. They
+            % are repeated over the plot because settling on a figure means
+            % copying it, looking at it, and changing something a dozen times
+            % over, and a menu is two clicks each time round.
+
+            % Text, tooltip, and what the button does. A row with no callback
+            % is the gap between one group of buttons and the next.
+            buttons = { ...
+                "Copy plot", "Copy the plot to the clipboard as an image.", ...
+                    @() obj.copyPlot(); ...
+                "Copy vector", "Copy the plot to the clipboard as vector " + ...
+                    "graphics, which stay sharp however large they are printed.", ...
+                    @() obj.copyPlot(ContentType = "vector"); ...
+                "Save plot...", "Write the plot to a PNG, PDF, SVG, or .fig file.", ...
+                    @() obj.savePlot(); ...
+                "", "", []; ...
+                "Copy data", "Copy the drawn profiles to the clipboard, " + ...
+                    "one column per section.", ...
+                    @() obj.onCopyData(); ...
+                "Copy summary", "Copy a written account of every choice " + ...
+                    "behind this view: the scale, what is shown, split, and filtered.", ...
+                    @() obj.copySummary(); ...
+                "To workspace", "Put the numbers behind the plot in the " + ...
+                    "base workspace.", ...
+                    @() obj.onSendToWorkspace(); ...
+                "", "", []; ...
+                "Pop out", "Draw this view into an ordinary figure window.", ...
+                    @() obj.popOut(); ...
+                "Reset", "Put the depth window, the scale, and the filter back.", ...
+                    @() obj.onReset()};
+
+            isGap = cellfun(@isempty, buttons(:,3));
+
+            widths = repmat({'fit'}, 1, size(buttons, 1));
+            widths(isGap) = {10};
+
+            % One trailing column takes whatever room is left, so the buttons
+            % stay together at the left rather than spreading over the width.
+            grid = uigridlayout(parent, [1 numel(widths) + 1]);
+            grid.ColumnWidth = [widths, {'1x'}];
+            grid.RowHeight = {'1x'};
+            grid.ColumnSpacing = 4;
+            grid.Padding = [0 0 0 0];
+
+            for k = 1:size(buttons, 1)
+
+                if isGap(k)
+                    continue
+                end
+
+                button = uibutton(grid, ...
+                    Text = buttons{k,1}, ...
+                    Tooltip = buttons{k,2}, ...
+                    ButtonPushedFcn = @(~,~) buttons{k,3}());
+                button.Layout.Column = k;
+
+            end
 
         end
 
@@ -1031,6 +1157,9 @@ classdef ECMBrowser < handle
                 DepthMin = obj.DepthMinField.Value, ...
                 DepthMax = obj.DepthMaxField.Value, ...
                 Legend = string(obj.LegendDropDown.Value), ...
+                TileSpacing = string(obj.SpacingDropDown.Value), ...
+                Padding = string(obj.PaddingDropDown.Value), ...
+                TickLabels = string(obj.TickLabelDropDown.Value), ...
                 Link = obj.LinkCheckBox.Value, ...
                 Transpose = obj.TransposeCheckBox.Value);
 
@@ -1083,13 +1212,40 @@ classdef ECMBrowser < handle
             obj.LegendDropDown.Value = obj.legendPlacement(s.Legend);
             obj.LinkCheckBox.Value = s.Link;
 
-            % Saved before Transpose was a control, a configuration says
-            % nothing about the orientation and is drawn the way it was.
+            % A configuration saved before one of these was a control says
+            % nothing about it, and is left at whatever the panel is showing
+            % rather than being read as a missing field.
             if isfield(s, "Transpose")
                 obj.TransposeCheckBox.Value = s.Transpose;
             end
 
+            if isfield(s, "TileSpacing")
+                obj.SpacingDropDown.Value = obj.oneOf(s.TileSpacing, obj.TileSpacings);
+            end
+
+            if isfield(s, "Padding")
+                obj.PaddingDropDown.Value = obj.oneOf(s.Padding, obj.LayoutPaddings);
+            end
+
+            if isfield(s, "TickLabels")
+                obj.TickLabelDropDown.Value = obj.oneOf(s.TickLabels, obj.TickLabelModes);
+            end
+
             obj.refresh();
+
+        end
+
+        function value = oneOf(~, saved, allowed)
+            %ONEOF The saved choice, or the first offered when it is not one of them.
+            % A configuration written by a version that offered a choice this
+            % one has since dropped names something not on the list, which is
+            % read as the default rather than raised as an error.
+
+            value = string(saved);
+
+            if ~isscalar(value) || ~ismember(value, allowed)
+                value = allowed(1);
+            end
 
         end
 
@@ -1335,23 +1491,61 @@ classdef ECMBrowser < handle
             % A single split wraps into a flow the way it always has; a split of
             % two or more fields is placed on the grid its combinations came out
             % on, empty cells and all, which is what makes one column comparable
-            % from row to row.
-            if nRows > 1
-                t = tiledlayout(parent, nRows, nCols, ...
-                    TileSpacing = "compact", Padding = "compact");
-            else
-                t = tiledlayout(parent, "flow", TileSpacing = "compact", Padding = "compact");
+            % from row to row. Two fields that happen to fill one row are gridded
+            % too rather than flowed, because a flow is free to wrap and the
+            % edge labels below can only be trusted on a grid.
+            onGrid = nRows > 1 || numel(tileBy) > 1;
+            tickMode = string(obj.TickLabelDropDown.Value);
+
+            % A flow picks its own wrap, and picks it again whenever the room
+            % it has to fill changes -- taking the numbers off an axis is
+            % enough to change it, which would leave the numbers on a diagonal
+            % of tiles that were at the edges before they were thinned. So a
+            % plot that has to know which tile sits at an edge is wrapped onto
+            % a grid of its own, at the squarest shape the tiles fit into.
+            if ~onGrid && tickMode ~= "every axis"
+                nCols = ceil(sqrt(numel(tiles)));
+                nRows = ceil(numel(tiles) / nCols);
+                onGrid = true;
+
+                for iTile = 1:numel(tiles)
+                    tiles(iTile).Col = mod(tiles(iTile).Index - 1, nCols) + 1;
+                    tiles(iTile).Row = (tiles(iTile).Index - tiles(iTile).Col) / nCols + 1;
+                end
             end
+
+            spacing = string(obj.SpacingDropDown.Value);
+            padding = string(obj.PaddingDropDown.Value);
+
+            if onGrid
+                t = tiledlayout(parent, nRows, nCols, ...
+                    TileSpacing = spacing, Padding = padding);
+            else
+                t = tiledlayout(parent, "flow", TileSpacing = spacing, Padding = padding);
+            end
+
+            % One field says which value a tile holds in the tile's own title.
+            % Two or more put the row's value down the left edge of the grid
+            % and the column's along the bottom, said once each instead of
+            % repeated in every title, so a row reads as one level of the first
+            % field and a column as one level of the last.
+            edgeLabels = onGrid && numel(tileBy) > 1;
 
             placement = string(obj.LegendDropDown.Value);
             firstAx = matlab.graphics.axis.Axes.empty;
 
+            % The axes each tile was drawn into, kept so that the pass over the
+            % grid below can find them again by the cell they sit in.
+            tileAx = gobjects(1, numel(tiles));
+
             for iTile = 1:numel(tiles)
-                if nRows > 1
+                if onGrid
                     ax = nexttile(t, tiles(iTile).Index);
                 else
                     ax = nexttile(t);
                 end
+
+                tileAx(iTile) = ax;
 
                 if iTile == 1
                     firstAx = ax;
@@ -1375,19 +1569,15 @@ classdef ECMBrowser < handle
                     set(artists, 'ContextMenu', groupMenus(char(groups(iGroup))))
                 end
 
-                if tiles(iTile).Label ~= ""
+                % Two or more fields name themselves on the edges of the
+                % grid instead, once the whole grid has been drawn.
+                if ~edgeLabels && tiles(iTile).Label ~= ""
                     title(ax, tiles(iTile).Label, Interpreter = "none")
                 end
 
                 grid(ax, "on")
                 box(ax, "on")
                 axis(ax, "tight")
-
-                if obj.TransposeCheckBox.Value
-                    % Depth down the vertical axis is read the way a section
-                    % is looked at: the surface at the top, deeper below it.
-                    ax.YDir = "reverse";
-                end
 
                 if placement == "per tile" && numel(groups) > 1
                     legend(ax, Interpreter = "none", Location = "best")
@@ -1403,8 +1593,6 @@ classdef ECMBrowser < handle
                     groupOf(drawn), placement);
             end
 
-            obj.labelLayout(t, groupField, tileBy, numel(tiles));
-
             if obj.LinkCheckBox.Value
                 axesHandles = findobj(t, "Type", "axes");
 
@@ -1412,6 +1600,26 @@ classdef ECMBrowser < handle
                     linkaxes(axesHandles)
                 end
             end
+
+            % Last of all, once every tile holds what it is going to hold and
+            % the linking has settled the limits they share: the numbers are
+            % thinned to the edges of the grid if that is what was asked for,
+            % and the row and column names are hung off those same edges.
+            [yLabels, xLabels] = obj.dressGrid(t, tiles, tileAx, nCols, tickMode, edgeLabels);
+
+            % The quantities go on after the edges have been named, not before.
+            % The layout places its own names clear of whatever the axes inside
+            % it are already wearing, so it has to be told them once the edges
+            % are wearing theirs or it puts "intensity" straight through a
+            % row's name.
+            obj.labelLayout(t, groupField, tileBy, numel(tiles), edgeLabels);
+
+            % And the names are lined up last of all. Every step above moves
+            % the axes about -- a name added to the layout takes room from
+            % them -- and an offset measured before the layout has settled is
+            % measured against a tile that is about to change size.
+            obj.alignLabels(yLabels, 1)
+            obj.alignLabels(xLabels, 2)
 
             obj.setStatus(sprintf("%d of %d sections | %s | %d group(s)%s%s", ...
                 numel(idx), height(obj.Files), tile_note(numel(tiles), nWanted), ...
@@ -1437,8 +1645,7 @@ classdef ECMBrowser < handle
 
                 case "peak summary"
                     rows = idx(cols);
-                    [px, py] = obj.orient(obj.Files.PeakX(rows), obj.peakHeights(rows));
-                    h(end+1) = scatter(ax, px, py, 42, ...
+                    h(end+1) = scatter(ax, obj.Files.PeakX(rows), obj.peakHeights(rows), 42, ...
                         sty.Color, "filled", ...
                         MarkerFaceAlpha = 0.7, ...
                         DisplayName = groupName);
@@ -1446,8 +1653,7 @@ classdef ECMBrowser < handle
 
                 case "sections"
                     for iCol = 1:numel(cols)
-                        [lx, ly] = obj.orient(x, Y(:, cols(iCol)));
-                        h(end+1) = line(ax, lx, ly, ...
+                        h(end+1) = line(ax, x, Y(:, cols(iCol)), ...
                             Color = sty.Color, ...
                             LineStyle = sty.LineStyle, ...
                             LineWidth = 1, ...
@@ -1459,8 +1665,7 @@ classdef ECMBrowser < handle
                 case "group mean"
                     if obj.SectionsCheckBox.Value
                         for iCol = 1:numel(cols)
-                            [lx, ly] = obj.orient(x, Y(:, cols(iCol)));
-                            h(end+1) = line(ax, lx, ly, ...
+                            h(end+1) = line(ax, x, Y(:, cols(iCol)), ...
                                 Color = [sty.Color 0.25], ...
                                 LineStyle = sty.LineStyle, ...
                                 LineWidth = 0.5, ...
@@ -1481,8 +1686,7 @@ classdef ECMBrowser < handle
                         lob = lo(banded);
                         hib = hi(banded);
 
-                        [bx, by] = obj.orient([xb; flipud(xb)], [lob; flipud(hib)]);
-                        h(end+1) = fill(ax, bx, by, ...
+                        h(end+1) = fill(ax, [xb; flipud(xb)], [lob; flipud(hib)], ...
                             sty.Color, ...
                             FaceAlpha = 0.2, ...
                             EdgeColor = "none", ...
@@ -1490,8 +1694,7 @@ classdef ECMBrowser < handle
                         roles(end+1) = "band";
                     end
 
-                    [mx, my] = obj.orient(x(n >= 1), m(n >= 1));
-                    h(end+1) = line(ax, mx, my, ...
+                    h(end+1) = line(ax, x(n >= 1), m(n >= 1), ...
                         Color = sty.Color, ...
                         LineStyle = sty.LineStyle, ...
                         LineWidth = 2, ...
@@ -1500,20 +1703,6 @@ classdef ECMBrowser < handle
             end
 
             obj.markStyled(h, roles, groupField, groupName, color);
-
-        end
-
-        function [alongX, alongY] = orient(obj, depthwise, valuewise)
-            %ORIENT One pair -- coordinates or labels -- in the order the axes are in.
-            % Everything drawn is worked out depth against intensity and put on
-            % the axes through here, so Transpose is a swap made in one place
-            % rather than a second version of every plot.
-
-            if obj.TransposeCheckBox.Value
-                [alongX, alongY] = deal(valuewise, depthwise);
-            else
-                [alongX, alongY] = deal(depthwise, valuewise);
-            end
 
         end
 
@@ -1637,13 +1826,13 @@ classdef ECMBrowser < handle
             % from -- the profiles are one measurement down a section, not a
             % row of independent ones.
             %
-            % The interval is the percentile one: it is read straight off the
-            % resampled means, so a group whose sections are all alike gives a
-            % band of no width rather than an error, where the bias-corrected
-            % default has nothing to correct against and returns nothing.
-            % BOOTCI belongs to the Statistics and Machine Learning Toolbox,
-            % and without it -- or on any other failure -- the band is left
-            % out rather than the plot.
+            % The interval is the percentile one rather than BOOTCI's
+            % bias-corrected default: it is read straight off the resampled
+            % means, which is what the band is drawn to show and what a
+            % methods line can state in a clause, and it spares a jackknife
+            % pass over every group on every draw. BOOTCI belongs to the
+            % Statistics and Machine Learning Toolbox, and without it -- or
+            % on any other failure -- the band is left out, not the plot.
 
             nDepth = size(M, 1);
             [lo, hi] = deal(nan(nDepth, 1));
@@ -1840,16 +2029,22 @@ classdef ECMBrowser < handle
             %TILING The axes the Tile by selection asks for, and the one each
             %section belongs in.
             % TILES is one entry per cell that holds sections, in the order they
-            % are drawn, carrying the cell it goes in and the title it wears;
-            % TILEOF says which cell each section in view fell into, counted
-            % across a grid NCOLS wide. A cell no section landed in is left
-            % out, so a combination the dataset never held costs nothing but
-            % the gap it leaves in the grid.
+            % are drawn, carrying the cell it goes in, the row and column that
+            % cell sits at, the title it wears and the row and column values it
+            % stands for; TILEOF says which cell each section in view fell into,
+            % counted across a grid NCOLS wide. A cell no section landed in is
+            % left out, so a combination the dataset never held costs nothing
+            % but the gap it leaves in the grid.
 
             nSections = numel(idx);
+            blank = struct("Index", 0, "Row", 0, "Col", 0, ...
+                "Label", "", "RowLabel", "", "ColLabel", "");
 
             if isempty(fields)
-                tiles = struct("Index", 1, "Label", "");
+                tiles = blank;
+                tiles.Index = 1;
+                tiles.Row = 1;
+                tiles.Col = 1;
                 tileOf = ones(nSections, 1);
                 nCols = 1;
                 return
@@ -1868,33 +2063,71 @@ classdef ECMBrowser < handle
                     obj.Text.(fields(iField))(idx), levels{iField});
             end
 
-            [colRanks, ~, colOf] = unique(ranks(:, end));
-            nCols = numel(colRanks);
+            % The last field's levels and the combinations of the fields
+            % before it are worked out the same way either way; Transpose
+            % decides only which of the two runs across the grid.
+            [lastRanks, ~, lastOf] = unique(ranks(:, end));
 
             if isscalar(fields)
-                rowRanks = zeros(1, 0);
-                rowOf = ones(nSections, 1);
+                leadRanks = zeros(1, 0);
+                leadOf = ones(nSections, 1);
             else
-                [rowRanks, ~, rowOf] = unique(ranks(:, 1:end-1), "rows");
+                [leadRanks, ~, leadOf] = unique(ranks(:, 1:end-1), "rows");
+            end
+
+            transposed = obj.TransposeCheckBox.Value;
+
+            if transposed
+                [rowOf, colOf] = deal(lastOf, leadOf);
+                nCols = max(leadOf);
+            else
+                [rowOf, colOf] = deal(leadOf, lastOf);
+                nCols = numel(lastRanks);
             end
 
             tileOf = (rowOf - 1) * nCols + colOf;
 
             occupied = unique(tileOf);
-            tiles = repmat(struct("Index", 0, "Label", ""), numel(occupied), 1);
+            tiles = repmat(blank, numel(occupied), 1);
 
             for iTile = 1:numel(occupied)
                 iCol = mod(occupied(iTile) - 1, nCols) + 1;
                 iRow = (occupied(iTile) - iCol) / nCols + 1;
 
+                if transposed
+                    [iLead, iLast] = deal(iCol, iRow);
+                else
+                    [iLead, iLast] = deal(iRow, iCol);
+                end
+
                 values = strings(1, numel(fields));
-                values(end) = levels{end}(colRanks(iCol));
+                values(end) = levels{end}(lastRanks(iLast));
 
                 for iField = 1:numel(fields) - 1
-                    values(iField) = levels{iField}(rowRanks(iRow, iField));
+                    values(iField) = levels{iField}(leadRanks(iLead, iField));
                 end
 
                 tiles(iTile).Index = occupied(iTile);
+                tiles(iTile).Row = iRow;
+                tiles(iTile).Col = iCol;
+
+                % One value belongs to every tile in its column and the other
+                % to every tile in its row, which is what lets the grid wear
+                % them on its edges instead of in every title. Transpose says
+                % which of the two goes on which edge.
+                leadLabel = "";
+
+                if ~isscalar(fields)
+                    leadLabel = strjoin(values(1:end-1), " | ");
+                end
+
+                if transposed
+                    tiles(iTile).RowLabel = values(end);
+                    tiles(iTile).ColLabel = leadLabel;
+                else
+                    tiles(iTile).RowLabel = leadLabel;
+                    tiles(iTile).ColLabel = values(end);
+                end
 
                 % One field names itself in every title, the way it always has.
                 % Several would spend the whole title on field names that do not
@@ -1924,8 +2157,191 @@ classdef ECMBrowser < handle
 
         end
 
-        function labelLayout(obj, t, groupField, tileFields, nTiles)
+        function [yLabels, xLabels] = dressGrid(obj, t, tiles, tileAx, nCols, mode, edgeLabels)
+            %DRESSGRID Thin the tick labels over the grid and name its edges.
+            % Both are decisions about where a tile sits rather than about what
+            % it holds, so both are made here, after every tile has been drawn.
+            % Anything that reaches this point is on a grid it was given rather
+            % than a flow that chose its own, so the cell a tile sits in is
+            % known rather than measured.
+
+            yLabels = gobjects(1, 0);
+            xLabels = gobjects(1, 0);
+
+            if mode == "every axis" && ~edgeLabels
+                return
+            end
+
+            rowOf = [tiles.Row];
+            colOf = [tiles.Col];
+
+            % Nothing is drawn to the left of these, and nothing below these.
+            % Read from the tiles that exist rather than from the extent of the
+            % grid, so that a combination the dataset never held cannot take the
+            % numbers off the axis a reader is left looking at.
+            n = numel(tiles);
+            atLeft = arrayfun(@(i) colOf(i) == min(colOf(rowOf == rowOf(i))), 1:n);
+            atBottom = arrayfun(@(i) rowOf(i) == max(rowOf(colOf == colOf(i))), 1:n);
+
+            switch mode
+
+                case "left and bottom axes"
+                    obj.hideTickLabels(tileAx(~atLeft), "y")
+                    obj.hideTickLabels(tileAx(~atBottom), "x")
+
+                case "bottom left axis only"
+                    % The lowest of the tiles drawn furthest left, which is the
+                    % corner of the grid whenever the corner was drawn at all.
+                    inCorner = false(1, n);
+                    lowest = rowOf == max(rowOf);
+                    [~, corner] = min(colOf + (~lowest) * (max(colOf) + 1));
+                    inCorner(corner) = true;
+
+                    obj.hideTickLabels(tileAx(~inCorner), "xy")
+
+            end
+
+            if edgeLabels
+                [yLabels, xLabels] = obj.labelGridEdges(t, tiles, tileAx, nCols);
+            end
+
+        end
+
+        function hideTickLabels(~, axesHandles, which)
+            %HIDETICKLABELS Take the numbers off an axis, leaving its ticks.
+            % An empty list of labels stays empty however the limits move
+            % afterwards, so a zoom or a pan does not bring the numbers back --
+            % which is what setting the labels to the ones drawn at the time
+            % would do the other way round, and leave them wrong.
+
+            for ax = reshape(axesHandles, 1, [])
+
+                if contains(which, "x")
+                    ax.XTickLabel = [];
+                end
+
+                if contains(which, "y")
+                    ax.YTickLabel = [];
+                end
+
+            end
+
+        end
+
+        function [yLabels, xLabels] = labelGridEdges(obj, t, tiles, tileAx, nCols)
+            %LABELGRIDEDGES Hang the row and column values off the grid's edges.
+            % Every row name goes in one column of the grid and every column
+            % name in one row of it, so the names line up down the left of the
+            % figure and along the bottom of it rather than following whichever
+            % tile of a row happens to have been drawn furthest left.
+
+            leftCol = min([tiles.Col]);
+            bottomRow = max([tiles.Row]);
+
+            yLabels = gobjects(1, 0);
+            xLabels = gobjects(1, 0);
+
+            for iRow = unique([tiles.Row])
+                ax = obj.edgeAxes(t, tiles, tileAx, iRow, leftCol, nCols);
+                first = find([tiles.Row] == iRow, 1);
+
+                ylabel(ax, tiles(first).RowLabel, Interpreter = "none", FontWeight = "bold")
+                yLabels(end+1) = ax.YLabel; %#ok<AGROW>
+            end
+
+            for iCol = unique([tiles.Col])
+                ax = obj.edgeAxes(t, tiles, tileAx, bottomRow, iCol, nCols);
+                first = find([tiles.Col] == iCol, 1);
+
+                xlabel(ax, tiles(first).ColLabel, Interpreter = "none", FontWeight = "bold")
+                xLabels(end+1) = ax.XLabel; %#ok<AGROW>
+            end
+
+            % A blank cell has none of the axis color a name is otherwise
+            % painted in, so every name is given the color an axis label wears
+            % by default and one on a blank cell cannot come out any different
+            % from the rest.
+            set([yLabels xLabels], 'Color', obj.LabelColor)
+
+        end
+
+        function alignLabels(~, labels, dim)
+            %ALIGNLABELS Put every label at the offset of the one furthest out.
+            % Every tile is the same size, so one offset measured against the
+            % tile it is on is the same place on the figure for all of them.
+
+            if numel(labels) < 2
+                return
+            end
+
+            set(labels, 'Units', 'normalized')
+
+            % Read only once the layout has stopped moving. Taking the numbers
+            % off an axis changes how wide it can be, the layout answers by
+            % resizing every tile, and it does not always finish inside one
+            % DRAWNOW: an offset read before it settles belongs to a tile that
+            % is about to change width, and pinning a name at that offset puts
+            % it somewhere no tile ever was.
+            settled = [];
+
+            for pass = 1:4
+                drawnow
+                offsets = arrayfun(@(h) h.Position(dim), labels);
+
+                if isequal(offsets, settled)
+                    break
+                end
+
+                settled = offsets;
+            end
+
+            % The one furthest out is left exactly where it was found, and it
+            % is the reason the rest can be moved at all: a name placed by hand
+            % stops counting toward the room the layout keeps clear for its own
+            % names, and were this one moved too, that room would close up and
+            % "intensity" would be drawn straight through the names.
+            [furthest, keep] = min(settled);
+
+            for iLabel = 1:numel(labels)
+
+                if iLabel == keep
+                    continue
+                end
+
+                position = labels(iLabel).Position;
+                position(dim) = furthest;
+                labels(iLabel).Position = position;
+            end
+
+        end
+
+        function ax = edgeAxes(~, t, tiles, tileAx, iRow, iCol, nCols)
+            %EDGEAXES The axes at one cell of the grid, made blank if it is empty.
+            % A combination the dataset never held leaves a hole, and a hole
+            % carries no name, so the cell is given an axes holding nothing but
+            % the name -- no box, no numbers, no color -- rather than letting
+            % the row's name slide inward to the first tile that was drawn.
+
+            index = (iRow - 1) * nCols + iCol;
+            at = find([tiles.Index] == index, 1);
+
+            if ~isempty(at)
+                ax = tileAx(at);
+                return
+            end
+
+            ax = nexttile(t, index);
+            set(ax, 'Color', 'none', 'XColor', 'none', 'YColor', 'none', ...
+                'XTick', [], 'YTick', [], 'PickableParts', 'none')
+            box(ax, "off")
+
+        end
+
+        function labelLayout(obj, t, groupField, tileFields, nTiles, edgeLabels)
             %LABELLAYOUT Name the axes once for the whole layout.
+            % The layout's own names are the quantities drawn, and they sit
+            % outside anything the tiles carry, so a grid labeled on its edges
+            % reads value then quantity outward from the axes either way.
 
             if string(obj.ShowDropDown.Value) == "peak summary"
                 % Named from the analysis rather than from the Signal control,
@@ -1938,12 +2354,8 @@ classdef ECMBrowser < handle
                 valueLabel = obj.withNormalization(string(obj.SignalDropDown.Value) + " intensity");
             end
 
-            % The names follow the axes they are on, so a transposed plot is
-            % labeled the way it is drawn rather than the way it was worked out.
-            [alongX, alongY] = obj.orient(depthLabel, valueLabel);
-
-            xlabel(t, alongX)
-            ylabel(t, alongY)
+            xlabel(t, depthLabel)
+            ylabel(t, valueLabel)
 
             if groupField == obj.NoField
                 title(t, "all sections")
@@ -1951,7 +2363,22 @@ classdef ECMBrowser < handle
                 title(t, "colored by " + groupField, Interpreter = "none")
             end
 
-            if nTiles > 1 && ~isempty(tileFields)
+            if edgeLabels
+                % The edges wear values rather than field names, so the field
+                % names are said here instead, split the way the grid is --
+                % which is the other way round on a transposed layout.
+                lead = strjoin(tileFields(1:end-1), " x ");
+                last = tileFields(end);
+
+                if obj.TransposeCheckBox.Value
+                    [rowsBy, colsBy] = deal(last, lead);
+                else
+                    [rowsBy, colsBy] = deal(lead, last);
+                end
+
+                subtitle(t, "rows: " + rowsBy + "   columns: " + colsBy, ...
+                    Interpreter = "none")
+            elseif nTiles > 1 && ~isempty(tileFields)
                 subtitle(t, "tiled by " + strjoin(tileFields, " x "), Interpreter = "none")
             end
 
@@ -2461,6 +2888,41 @@ classdef ECMBrowser < handle
 
         end
 
+        function note = copyImage(obj, f)
+            %COPYIMAGE Put the plot on the clipboard as a PNG.
+            % COPYGRAPHICS offers a Windows bitmap and nothing besides, which
+            % the desktop applications read and the ones that live in a
+            % browser -- Google Slides among them -- quietly ignore, so a
+            % paste there does nothing at all and says nothing about why. The
+            % plot is written to a scratch PNG at the export resolution
+            % instead and put on the clipboard twice over: under PNG, which
+            % the browser applications look for, and under bitmap, which the
+            % desktop ones look for and which Windows makes the older DIB
+            % formats out of. Whatever it is pasted into takes the one it
+            % knows. A PNG is a bitmap format like the others, so
+            % transparency is no more on offer here than in a saved one, and
+            % the note saying so goes back to the caller for the status line.
+
+            [background, note] = obj.backgroundArg(".png");
+
+            scratch = string(tempname) + ".png";
+            cleanUp = onCleanup(@() delete_if_present(scratch));
+
+            exportgraphics(f, scratch, Resolution = obj.ExportResolution, ...
+                BackgroundColor = background)
+
+            if ispc
+                copy_png_to_clipboard(scratch)
+            else
+                % The clipboard is reached through .NET, which is on Windows
+                % alone; elsewhere the bitmap is all there is to give.
+                copygraphics(f, ContentType = "image", ...
+                    Resolution = obj.ExportResolution, ...
+                    BackgroundColor = background)
+            end
+
+        end
+
         function [color, note] = backgroundArg(obj, ext)
             %BACKGROUNDARG What goes behind the plot in a file of this kind.
             % Transparency is something only the vector formats carry: PNG,
@@ -2468,7 +2930,9 @@ classdef ECMBrowser < handle
             % and MATLAB says so on the console rather than where the choice
             % was made, so it is said here instead and the caller puts it in
             % the status line. A .fig has no paper behind it to argue about,
-            % being the figure itself rather than a picture of one.
+            % being the figure itself rather than a picture of one, and
+            % "clipboard" is the vector copy: the image one is a PNG and asks
+            % under that name, so that it is answered as the bitmap it is.
 
             arguments
                 obj
@@ -2868,5 +3332,41 @@ function delete_if_present(file)
 if isfile(file)
     delete(file)
 end
+
+end
+
+function copy_png_to_clipboard(file)
+%COPY_PNG_TO_CLIPBOARD Put one PNG file on the Windows clipboard.
+% Under both names an application might ask for it by: PNG, and bitmap.
+% The bytes go over as they were written rather than encoded a second
+% time, so what comes out of a paste is the file that went in.
+
+NET.addAssembly("System.Windows.Forms");
+NET.addAssembly("System.Drawing");
+
+fid = fopen(file, "r");
+
+if fid < 0
+    error("ECMBrowser:clipboardRead", ...
+        "Could not read the plot back from %s.", file)
+end
+
+closeWhenDone = onCleanup(@() fclose(fid));
+bytes = fread(fid, Inf, "*uint8");
+
+% Two streams rather than one read twice: GDI+ reads the image out of the
+% stream it was handed as it needs it, so the stream behind the bitmap has
+% to stay open and at its own position until the clipboard is written.
+pngStream = System.IO.MemoryStream(bytes);
+bitmapStream = System.IO.MemoryStream(bytes);
+
+data = System.Windows.Forms.DataObject();
+data.SetData("PNG", pngStream);
+data.SetData(System.Windows.Forms.DataFormats.Bitmap, ...
+    System.Drawing.Image.FromStream(bitmapStream));
+
+% Given rather than promised: the picture stays on the clipboard after the
+% browser that put it there has closed.
+System.Windows.Forms.Clipboard.SetDataObject(data, true);
 
 end
