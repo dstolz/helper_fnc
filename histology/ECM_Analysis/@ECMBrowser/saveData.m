@@ -13,7 +13,8 @@ function file = saveData(obj, filename, options)
     % package wants; the depths a section never reached are left out
     % rather than written as blanks. "sections" is one row per section
     % -- the table beside the profiles, with the peak added to it on
-    % the scale the plot is drawn on.
+    % the scale the plot is drawn on, and the summary metric the Metric
+    % control names taken over the depth window on screen.
     %
     % Under a comparison all three are written per comparison rather
     % than per section, and "sections" carries the account of it:

@@ -7,7 +7,21 @@ function labelLayout(obj, t, groupField, tileFields, nTiles, edgeLabels)
     % than two fields leaves nothing to split an axis on, so the axes
     % fall back to naming the quantity every tile plots instead.
 
-    if string(obj.ShowDropDown.Value) == "peak summary"
+    if string(obj.ShowDropDown.Value) == "metric summary"
+        % The x axis is the split itself rather than a quantity: the
+        % ticks under the points already name the groups, so what is
+        % said here is the field they are values of. With no field to
+        % color by there is one slot holding everything, and naming it
+        % "(none)" would say less than saying nothing.
+        depthLabel = groupField;
+
+        if groupField == obj.NoField
+            depthLabel = "";
+        end
+
+        valueLabel = obj.metricLabel();
+
+    elseif string(obj.ShowDropDown.Value) == "peak summary"
         % Named from the analysis rather than from the Signal control,
         % which does not reach the peaks: they were taken from whichever
         % trace ecm_prepare_analysis_data was asked to search.
@@ -47,7 +61,10 @@ function labelLayout(obj, t, groupField, tileFields, nTiles, edgeLabels)
         end
 
         if obj.AxisQuantityCheckBox.Value
-            colsBy = colsBy + "  (" + depthLabel + ")";
+            if depthLabel ~= ""
+                colsBy = colsBy + "  (" + depthLabel + ")";
+            end
+
             rowsBy = rowsBy + "  (" + valueLabel + ")";
             rowsBy = with_formula(rowsBy, formula);
         end

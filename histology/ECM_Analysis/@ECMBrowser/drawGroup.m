@@ -1,7 +1,13 @@
-function h = drawGroup(obj, ax, x, Y, idx, cols, groupField, groupName, color)
+function h = drawGroup(obj, ax, x, Y, idx, cols, groupField, groupName, color, slot)
     %DRAWGROUP Draw one group's sections into one tile.
     % Only the first artist of a group carries a DisplayName, so the
     % legend lists groups rather than every section in them.
+    %
+    % SLOT is the group's place along the x axis, counted from one over
+    % every group in the layout rather than over the ones this tile
+    % happens to hold. It is what the metric summary plots against, and
+    % taking it from the layout is what keeps a group over the same tick
+    % from tile to tile, whether or not its neighbors reached them.
     %
     % Everything drawn is handed back and marked with the group it
     % belongs to and the part it plays in it, which is what lets a
@@ -21,6 +27,46 @@ function h = drawGroup(obj, ax, x, Y, idx, cols, groupField, groupName, color)
                 MarkerFaceAlpha = 0.7, ...
                 DisplayName = groupName);
             roles(end+1) = "marker";
+
+        case "metric summary"
+            v = section_metrics(x, Y(:, cols), string(obj.MetricDropDown.Value));
+
+            % One point per section at the group's own place on the
+            % axis, spread across the slot so that two sections of the
+            % same value do not land on top of one another. Spread by
+            % position in the group rather than at random, so that a
+            % redraw puts every point back where it was and a figure
+            % saved twice is the same figure twice.
+            at = slot + obj.MetricSpread * obj.MetricJitter * spread(numel(v));
+
+            h(end+1) = scatter(ax, at, v, 42, ...
+                sty.Color, "filled", ...
+                MarkerFaceAlpha = 0.7, ...
+                DisplayName = groupName);
+            roles(end+1) = "marker";
+
+            % The group's mean ruled through its points, with whatever
+            % the Error band control names drawn up and down from it.
+            % Both are drawn out of the legend: the points already carry
+            % the group's name, and a key listing it three times says
+            % nothing the first entry did not.
+            [m, lo, hi] = obj.metricBand(v);
+
+            if isfinite(lo) && isfinite(hi)
+                h(end+1) = line(ax, [slot slot], [lo hi], ...
+                    Color = sty.Color, ...
+                    LineWidth = 1.5, ...
+                    HandleVisibility = "off");
+                roles(end+1) = "rule";
+            end
+
+            if isfinite(m)
+                h(end+1) = line(ax, slot + obj.MetricSpread * [-1 1], [m m], ...
+                    Color = sty.Color, ...
+                    LineWidth = 2, ...
+                    HandleVisibility = "off");
+                roles(end+1) = "rule";
+            end
 
         case "sections"
             for iCol = 1:numel(cols)
@@ -74,5 +120,19 @@ function h = drawGroup(obj, ax, x, Y, idx, cols, groupField, groupName, color)
     end
 
     obj.markStyled(h, roles, groupField, groupName, color);
+
+end
+
+function offsets = spread(n)
+%SPREAD Where each of N points sits across the width of one group's slot.
+% As a fraction of the half-width, so that one point sits on the group's
+% tick and any more of them fill the slot evenly out to its edges.
+
+if n < 2
+    offsets = 0;
+    return
+end
+
+offsets = linspace(-1, 1, n).';
 
 end

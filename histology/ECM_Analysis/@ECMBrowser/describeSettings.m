@@ -9,6 +9,13 @@ function label = describeSettings(obj, s)
 
     label = s.Show;
 
+    % Which summary, though, is part of what is shown rather than a
+    % fine-tuning of it: two configurations that differ only by it are
+    % two different plots and should not come back under one name.
+    if isfield(s, "Metric") && s.Show == "metric summary"
+        label = label + ": " + s.Metric;
+    end
+
     if s.Group ~= obj.NoField
         label = label + " by " + s.Group;
     end
@@ -19,7 +26,19 @@ function label = describeSettings(obj, s)
         label = label + ", tiled " + strjoin(tile, " x ");
     end
 
-    if s.FilterField ~= obj.AllSections
+    % Which fields are narrowed rather than what they are narrowed to: the
+    % values are the fine-tuning this name leaves out, and joined by the
+    % rule that combines them so that an AND is not read as an OR.
+    if isfield(s, "Filters") && ~isempty(s.Filters)
+        if isfield(s, "FilterMatch") && s.FilterMatch == obj.FilterMatches(2)
+            joiner = " or ";
+        else
+            joiner = " and ";
+        end
+
+        label = label + ", filtered " + ...
+            strjoin(reshape([s.Filters.Field], 1, []), joiner);
+    elseif isfield(s, "FilterField") && s.FilterField ~= obj.AllSections
         label = label + ", filtered " + s.FilterField;
     end
 

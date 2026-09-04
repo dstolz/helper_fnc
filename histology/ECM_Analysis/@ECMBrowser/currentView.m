@@ -9,12 +9,7 @@ function [idx, Y, x] = currentView(obj)
         Y = obj.Data.grid.smoothed;
     end
 
-    keep = true(height(obj.Files), 1);
-    field = string(obj.FilterFieldDropDown.Value);
-
-    if field ~= obj.AllSections
-        keep = ismember(obj.Text.(field), string(obj.FilterValuesListBox.Value));
-    end
+    keep = obj.filterMask();
 
     idx = find(keep);
 

@@ -15,13 +15,16 @@ function lgd = layoutLegend(obj, ax, groupField, groups, colors, groupOf, placem
     % of the key goes back to the plot.
 
     proxies = gobjects(1, numel(groups));
-    onPeaks = string(obj.ShowDropDown.Value) == "peak summary";
+    % The two modes that draw one point per section are keyed by a
+    % marker; everything else draws curves and is keyed by a line.
+    onPoints = ismember(string(obj.ShowDropDown.Value), ...
+        ["peak summary", "metric summary"]);
 
     for k = 1:numel(groups)
         sty = obj.effectiveStyle(groupField, groups(k));
         label = obj.legendEntry(groups(k), nnz(groupOf == groups(k)));
 
-        if onPeaks
+        if onPoints
             proxies(k) = scatter(ax, NaN, NaN, 42, sty.Color, "filled", ...
                 MarkerFaceAlpha = 0.7, ...
                 DisplayName = label);

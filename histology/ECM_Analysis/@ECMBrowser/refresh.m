@@ -23,11 +23,20 @@ function refresh(obj)
         % A control that cannot affect the current view is grayed out
         % rather than left to be tried: the peak summary is one point per
         % section taken from A.peaks, so neither the signal nor the depth
-        % window reaches it.
+        % window reaches it. The metric summary is read off the curves
+        % themselves, so both reach it and both stay live.
         show = string(obj.ShowDropDown.Value);
 
-        obj.ErrorDropDown.Enable = matlab.lang.OnOffSwitchState(show == "group mean");
-        obj.SectionsCheckBox.Enable = obj.ErrorDropDown.Enable;
+        obj.MetricDropDown.Enable = ...
+            matlab.lang.OnOffSwitchState(show == "metric summary");
+
+        % The error band means at a point what it means along a curve, so
+        % it is offered for both; the sections drawn faintly behind a
+        % mean have nowhere to go where the sections are the plot.
+        obj.ErrorDropDown.Enable = matlab.lang.OnOffSwitchState( ...
+            ismember(show, ["group mean", "metric summary"]));
+        obj.SectionsCheckBox.Enable = ...
+            matlab.lang.OnOffSwitchState(show == "group mean");
 
         onProfiles = matlab.lang.OnOffSwitchState(show ~= "peak summary");
         obj.SignalDropDown.Enable = onProfiles;
@@ -51,6 +60,11 @@ function refresh(obj)
         obj.CompareFieldDropDown.Enable = comparing;
         obj.CompareRefDropDown.Enable = comparing;
         obj.PairListBox.Enable = comparing;
+
+        % A section can be closed over a control that is narrowing the
+        % plot, so what each closed one is holding is said on its header
+        % before the plot under it is redrawn.
+        obj.refreshSectionSummaries();
 
         delete(obj.PlotPanel.Children);
         obj.draw(obj.PlotPanel);

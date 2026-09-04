@@ -10,8 +10,14 @@ function applySettings(obj, s)
     obj.ScopeDropDown.Value = s.Scope;
     obj.RefMinField.Value = s.RefMin;
     obj.RefMaxField.Value = s.RefMax;
-    obj.ShowDropDown.Value = s.Show;
+    obj.ShowDropDown.Value = obj.oneOf(s.Show, obj.ShowModes);
     obj.ErrorDropDown.Value = s.ErrorBand;
+
+    % A configuration saved before the metric summary existed says
+    % nothing about which metric, and opens on the first of them.
+    if isfield(s, "Metric")
+        obj.MetricDropDown.Value = obj.oneOf(s.Metric, obj.SummaryMetrics);
+    end
     obj.SectionsCheckBox.Value = s.SectionsBehind;
 
     if ismember(s.Group, string(obj.GroupDropDown.Items))
@@ -26,19 +32,32 @@ function applySettings(obj, s)
 
     obj.TileListBox.Value = cellstr(tile);
 
-    if ismember(s.FilterField, string(obj.FilterFieldDropDown.Items))
-        obj.FilterFieldDropDown.Value = s.FilterField;
+    % A configuration saved before a filter could hold more than one field
+    % names the one it held, and comes back as the single condition it was.
+    if isfield(s, "Filters")
+        obj.Filters = obj.knownFilters(s.Filters);
+    elseif isfield(s, "FilterField") && s.FilterField ~= obj.AllSections
+        obj.Filters = obj.knownFilters(struct( ...
+            Field = s.FilterField, Values = s.FilterValues, Keep = true));
     else
+        obj.Filters(:) = [];
+    end
+
+    if isfield(s, "FilterMatch")
+        obj.FilterMatchDropDown.Value = obj.oneOf(s.FilterMatch, obj.FilterMatches);
+    end
+
+    % The editor opens on the first condition restored, so that a view put
+    % back filtered shows what it is filtered by rather than an empty list
+    % of values over a panel that is quietly dropping sections.
+    if isempty(obj.Filters)
         obj.FilterFieldDropDown.Value = obj.AllSections;
+    else
+        obj.FilterFieldDropDown.Value = obj.Filters(1).Field;
     end
 
-    obj.onFilterFieldChanged();
-
-    values = s.FilterValues(ismember(s.FilterValues, string(obj.FilterValuesListBox.Items)));
-
-    if ~isempty(values)
-        obj.FilterValuesListBox.Value = cellstr(values);
-    end
+    obj.onFilterFieldChanged(false);
+    obj.refreshFilterList();
 
     obj.DepthMinField.Value = s.DepthMin;
     obj.DepthMaxField.Value = s.DepthMax;

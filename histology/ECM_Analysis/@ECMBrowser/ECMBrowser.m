@@ -12,6 +12,15 @@ classdef ECMBrowser < handle
 % across columns rather than a regrouping, and any field of the section table
 % can group or tile without recomputing anything.
 %
+% The controls are gathered into sections that open and close from the bar
+% naming each one -- Signal & scale, Compare, Plot, Split, Filter, Layout,
+% and Configurations. Any one figure is settled by three or four controls,
+% not by all two dozen, so the panel opens on the sections most figures are
+% made of and leaves the rest shut. A shut section says on its own bar what
+% it is holding -- the comparison in force, how many filter conditions are
+% standing -- so nothing narrows the plot from out of sight, and a count of
+% what is drawn runs along the foot of the window under both halves of it.
+%
 % The controls are, in order:
 %   Signal      Smoothed or raw intensity.
 %   Normalize   A rescaling of the intensities, applied on top of whatever
@@ -70,11 +79,30 @@ classdef ECMBrowser < handle
 %               with Color by set to the compared field -- would take out the
 %               difference before it is measured.
 %   Show        Every section, the group mean with an error band, or one point
-%               per section in peak depth / peak intensity. A comparison is
-%               drawn in place of the sections, so its curves are what is
-%               shown and averaged, and its peak is the depth it departs
-%               furthest from no difference -- zero, or one for a ratio.
-%   Error band  What the band around a group mean spans: the spread of its
+%               per section: the peak summary in peak depth against peak
+%               intensity, or the metric summary in whichever single number
+%               of the curve the Metric control names, plotted down the
+%               groups. A comparison is drawn in place of the sections, so
+%               its curves are what is shown, averaged, and summarized, and
+%               its peak is the depth it departs furthest from no difference
+%               -- zero, or one for a ratio.
+%   Metric      What one point of the metric summary measures, for the metric
+%               summary alone: how much signal there is under the curve (its
+%               mean, median, or integral), where it is (peak height and
+%               depth, the two peaks a double-peaked profile has and the
+%               separation between them, the centroid), how wide it is
+%               (FWHM), or how much it varies (range, variance, standard
+%               deviation, coefficient of variation, slope). Unlike the peak
+%               summary, which reads A.peaks as ecm_prepare_analysis_data
+%               measured it, these are read off the curve on screen: the
+%               depth window, the signal, the normalization, and a comparison
+%               all reach them, so the summary and the plot beside it are
+%               always answering the same question. Sections are drawn as one
+%               point each, spread across their group's place on the axis,
+%               with the group's mean ruled through them and the error band
+%               drawn as a bar rather than as a band.
+%   Error band  What the band around a group mean spans, and what the bar
+%               through a metric summary's group spans: the spread of its
 %               sections, a normal interval for their mean, or a bootstrap
 %               one that resamples the sections instead of assuming a shape
 %               for them and may sit unevenly around the mean.
@@ -91,9 +119,23 @@ classdef ECMBrowser < handle
 %               runs across the columns and the ones before it down the rows,
 %               so a column can be read from row to row. Transpose swaps
 %               the two.
-%   Filter      One field, and which of its values to keep. It picks sections
-%               rather than comparisons, so it is applied before any pairing
-%               and narrows what there is to compare.
+%   Filter by   Which field is being narrowed, and which of its values to
+%               keep -- or, with Values set to drop, to throw out. A field
+%               is remembered once it has been narrowed, so moving on to a
+%               second field adds a condition beside the first rather than
+%               replacing it, and several parameters are filtered on at
+%               once. Putting every value of a field back selects nothing
+%               and takes its condition off the list again.
+%   Combine     Whether a section has to satisfy all of the conditions or
+%               any one of them -- an AND across them, or an OR. Offered
+%               once there are two conditions to combine, one condition
+%               meaning the same thing under either rule.
+%   Filters     The conditions standing, one to a line. Picking one puts the
+%               two controls above back on the field it names, so it can be
+%               widened or narrowed where it is; Remove takes it off and
+%               Clear all empties the list. Filters pick sections rather
+%               than comparisons, so they are applied before any pairing and
+%               narrow what there is to compare.
 %   Depth       The depth window drawn, in the profiles' own distance unit.
 %   Transpose   Turns the grid of axes on its side: the field that ran
 %               across the columns runs down the rows instead, and the ones
@@ -129,8 +171,9 @@ classdef ECMBrowser < handle
 % together can ask for more axes than a screen can show anything in, so the
 % ones past the 64th are left undrawn and the status line says so.
 %
-% Config, near the foot of the panel, remembers the state of every control
-% above -- not a color or line style set from a right-click menu, which is
+% Configurations, the last section of the panel, remembers the state of every
+% control above -- not a color or line style set from a right-click menu,
+% which is
 % kept of its own accord. Save adds the state on screen now to the list under
 % an autogenerated name; picking a name back out of the list puts the panel
 % back the way it was; Delete removes the name showing, and Purge every name
@@ -159,7 +202,8 @@ classdef ECMBrowser < handle
 % under the plot the same way: to the base workspace, to the clipboard, or
 % to a CSV -- one column per section for a plotting program, one row per
 % sample carrying every field the sections can be split by for a statistics
-% package, or one row per section for the peaks. Under a comparison a column
+% package, or one row per section for the peaks and the summary metric in
+% force. Under a comparison a column
 % is a comparison rather than a section, and the last of the three says what
 % was measured against what, how many sections went into each side of it,
 % and where it departs furthest from no difference. Image resolution and
@@ -167,7 +211,11 @@ classdef ECMBrowser < handle
 % paper behind the plot is white or left out altogether, which only the
 % vector formats can do; both are kept for the session. Copy view summary writes out every choice that decides what
 % the plot means, which is what a methods paragraph needs and a screenshot
-% does not hold.
+% does not hold. Copy code writes the same view out as the commands that
+% rebuild it -- setComparison, setTiling, and the rest, one line each --
+% which is what belongs in the script that makes the figure for the paper,
+% and is the only way a color picked from a right-click menu leaves the
+% browser at all.
 %
 % See also ECM_PREPARE_ANALYSIS_DATA, LAUNCH_ECM_BROWSER, HISTOLOGYIMAGEBROWSER.
 
@@ -194,12 +242,16 @@ classdef ECMBrowser < handle
         CompareRefDropDown matlab.ui.control.DropDown
         PairListBox matlab.ui.control.ListBox
         ShowDropDown matlab.ui.control.DropDown
+        MetricDropDown matlab.ui.control.DropDown
         ErrorDropDown matlab.ui.control.DropDown
         SectionsCheckBox matlab.ui.control.CheckBox
         GroupDropDown matlab.ui.control.DropDown
         TileListBox matlab.ui.control.ListBox
         FilterFieldDropDown matlab.ui.control.DropDown
         FilterValuesListBox matlab.ui.control.ListBox
+        FilterSenseDropDown matlab.ui.control.DropDown
+        FilterMatchDropDown matlab.ui.control.DropDown
+        FilterListBox matlab.ui.control.ListBox
         DepthMinField matlab.ui.control.NumericEditField
         DepthMaxField matlab.ui.control.NumericEditField
         LegendDropDown matlab.ui.control.DropDown
@@ -211,6 +263,34 @@ classdef ECMBrowser < handle
         AxisQuantityCheckBox matlab.ui.control.CheckBox
         ConfigDropDown matlab.ui.control.DropDown
         StatusLabel matlab.ui.control.Label
+    end
+
+    properties (Access = private)
+        % The collapsible groups the controls above are gathered into. One
+        % entry per group, in the order they are stacked: the header button
+        % that opens and closes it, the dimmed label beside that header
+        % saying what a closed group is holding, the grid its controls live
+        % in, and how tall that grid has to be when the group is open. The
+        % row of SECTIONGRID each one occupies is what actually opens and
+        % closes -- a grid row cannot be hidden, so it is set to the height
+        % of the header alone and the controls under it are hidden with it.
+        SectionGrid matlab.ui.container.GridLayout
+        Sections struct = struct("Key", {}, "Title", {}, "Row", {}, ...
+            "Header", {}, "Summary", {}, "Body", {}, "Height", {}, "Open", {})
+    end
+
+    properties (SetAccess = private)
+        % Which sections are being kept, as one condition per field: the
+        % values of that field to keep, or -- with KEEP false -- to throw
+        % out. Every other control holds its own state, but a list of
+        % conditions is more than a control can carry, so the three filter
+        % controls are an editor onto this and FILTERMATCHDROPDOWN says
+        % whether a section has to satisfy all of them or any one.
+        %
+        % A field appears here at most once. A condition that constrains
+        % nothing -- every value kept, or none thrown out -- is taken off
+        % rather than stored, so an empty list means every section is drawn.
+        Filters struct = struct("Field", {}, "Values", {}, "Keep", {})
     end
 
     properties (Access = private)
@@ -270,11 +350,56 @@ classdef ECMBrowser < handle
         MaxFilterLevels = 100
         MaxTiles = 64
 
+        % Whether a filter condition keeps the values picked or throws them
+        % out, and how several conditions are combined: a section has to
+        % satisfy all of them, or any one of them. Both are written the way
+        % they are asked about rather than in the words of the arithmetic,
+        % with the operator named after them for whoever thinks in it.
+        FilterSenses = ["keep", "drop"]
+        FilterMatches = ["all (AND)", "any (OR)"]
+
+        % How many of a condition's values are spelled out where it is
+        % listed. A field narrowed to twenty subjects is a line no panel has
+        % room for, so the first few are named and the rest counted, the way
+        % a comparison's formulas are.
+        MaxFilterTerms = 4
+
         % How many of a comparison's formulas the axis is willing to
         % carry. Several values against one reference, or every pair of
         % them, is more arithmetic than a label has room for, so the
         % first few are written out and the rest counted.
         MaxFormulaTerms = 3
+
+        % What a plot is made of. The first two draw the profiles
+        % themselves; the last two draw one point per section instead --
+        % the peak summary in peak depth against peak height, taken from
+        % A.peaks as ecm_prepare_analysis_data measured it, and the
+        % metric summary in whichever single number of the drawn curve
+        % the Metric control names, read down the groups.
+        ShowModes = ["sections", "group mean", "peak summary", "metric summary"]
+
+        % The single numbers a profile can be summarized by, in the order
+        % they are listed: how much signal there is, where it is, how
+        % wide and how lopsided the shape holding it is, and how much it
+        % varies. All are read off the curve on screen rather than from
+        % the analysis, so the depth window, the signal, the
+        % normalization, and a comparison all reach them -- which is what
+        % makes the summary a summary of the plot beside it.
+        SummaryMetrics = ["mean", "median", "integral", ...
+            "peak height", "peak depth", ...
+            "peak1 - peak2 (height)", "peak1 to peak2 (depth)", ...
+            "FWHM", "centroid depth", "range (max - min)", ...
+            "variance", "std. dev.", "coeff. of variation", "slope"]
+
+        % How far to either side of a group's position on the axis a
+        % metric summary reaches: the half-width the mean is ruled
+        % across, and the fraction of it the sections are spread over.
+        % Wide enough that a dozen sections do not sit on top of one
+        % another, narrow enough that two groups do not run together,
+        % and the points kept inside the rule so that the rule reads as
+        % spanning the group rather than as one more point in it.
+        MetricSpread = 0.3
+        MetricJitter = 0.75
 
         % The rescalings on offer, in the order they are listed: none, the
         % section's own spread, its range, its highest point, the area under
@@ -332,6 +457,43 @@ classdef ECMBrowser < handle
         % off the edges is only sound while the axes are linked, which is what
         % the Link axes box is for.
         TickLabelModes = ["every axis", "left and bottom axes", "bottom left axis only"]
+
+        % How the panel's collapsible sections are measured out: the height
+        % of one labeled control, of a section's header, the air around and
+        % between the controls inside one, and the two markers a header
+        % carries to say which way it is. The markers are written as code
+        % points rather than as themselves so that the file stays plain
+        % ASCII, as the rest of them are.
+        SectionRowHeight = 24
+        SectionHeaderHeight = 26
+        SectionPad = 8
+        SectionSpacing = 6
+        SectionOpenMark = char(9662)
+        SectionShutMark = char(9656)
+
+        % How much a closed section is allowed to say about what it holds.
+        % The header it shares the row with is the thing being read, so a
+        % summary longer than this is cut short rather than crowding it out.
+        MaxSummaryChars = 26
+
+        % A tint for each section's header, in the order they are stacked.
+        % Seven headers in a column all painted the same are seven things to
+        % read; a hue apiece makes one of them a place on the panel, so that
+        % Filter is found by the pink bar rather than by reading down from
+        % the top. They are kept pale enough to leave the name on them the
+        % thing that carries -- a header is a label to be read, not a signal
+        % in its own right -- and dark text is asked for by name so that a
+        % window in a dark theme does not put light text on them.
+        SectionColors = [ ...
+            0.85 0.91 0.97; ... % Signal & scale, blue
+            0.91 0.87 0.96; ... % Compare, violet
+            0.87 0.94 0.87; ... % Plot, green
+            0.98 0.93 0.80; ... % Split, amber
+            0.98 0.88 0.88; ... % Filter, rose
+            0.85 0.94 0.95; ... % Layout, cyan
+            0.91 0.90 0.88]     % Configurations, warm gray
+
+        SectionFontColor = [0.15 0.15 0.15]
 
         % What marks an artist as belonging to a group, what marks a menu as
         % ours to clear on the next draw, and the line styles on offer.
@@ -411,8 +573,8 @@ classdef ECMBrowser < handle
 
         end
 
-        % Keep only the sections whose FIELD holds one of VALUES.
-        setFilter(obj, field, values)
+        % Narrow FIELD to VALUES, beside whatever else is already narrowed.
+        setFilter(obj, field, values, options)
 
         % Give every combination of FIELDS its own axes.
         setTiling(obj, fields)
@@ -447,6 +609,9 @@ classdef ECMBrowser < handle
 
         % The numbers behind the plot, as one struct.
         v = viewData(obj)
+
+        % This view, as the commands that would put a browser back in it.
+        code = viewCommands(obj, options)
 
         % Write the numbers behind the plot to a delimited file.
         file = saveData(obj, filename, options)
@@ -494,6 +659,241 @@ classdef ECMBrowser < handle
 
         end
 
+        function body = addSection(obj, row, key, titleText, rowHeights, open)
+            %ADDSECTION Put one collapsible group of controls on the panel.
+            % ROW is the row of SECTIONGRID the group takes, KEY the name
+            % SECTIONSUMMARY knows it by, and ROWHEIGHTS one height per
+            % labeled row of controls inside it. What comes back is the grid
+            % those controls are built into, which is what BUILDUI wants.
+
+            arguments
+                obj
+                row (1,1) double
+                key (1,1) string
+                titleText (1,1) string
+                rowHeights cell
+                open (1,1) logical = true
+            end
+
+            panel = uipanel(obj.SectionGrid, BorderType = "line");
+            panel.Layout.Row = row;
+            panel.Layout.Column = 1;
+
+            frame = uigridlayout(panel, [2 1]);
+            frame.ColumnWidth = {'1x'};
+            frame.RowHeight = {obj.SectionHeaderHeight, '1x'};
+            frame.RowSpacing = 0;
+            frame.Padding = [0 0 0 0];
+
+            % The header is a button across the width of the section rather
+            % than a title with a chevron beside it: the whole bar is what
+            % anyone aims at, and a button is the one thing on the panel
+            % that already looks like something to press. The grid behind it
+            % is painted the same tint, so the strip the summary sits in
+            % carries on the bar rather than cutting it short.
+            tint = obj.SectionColors(min(row, size(obj.SectionColors, 1)), :);
+
+            head = uigridlayout(frame, [1 2]);
+            head.ColumnWidth = {'1x', 'fit'};
+            head.RowHeight = {'1x'};
+            head.ColumnSpacing = 4;
+            head.Padding = [0 0 8 0];
+            head.BackgroundColor = tint;
+
+            header = uibutton(head, ...
+                FontWeight = "bold", ...
+                HorizontalAlignment = "left", ...
+                BackgroundColor = tint, ...
+                FontColor = obj.SectionFontColor, ...
+                Tooltip = "Show or hide these controls.", ...
+                ButtonPushedFcn = @(~,~) obj.toggleSection(key));
+
+            summary = uilabel(head, Text = "", FontAngle = "italic", ...
+                FontColor = obj.SectionFontColor, ...
+                HorizontalAlignment = "right");
+
+            body = uigridlayout(frame, [numel(rowHeights) 2]);
+            body.ColumnWidth = {90, '1x'};
+            body.RowHeight = rowHeights;
+            body.RowSpacing = obj.SectionSpacing;
+            body.Padding = repmat(obj.SectionPad, 1, 4);
+
+            obj.Sections(end+1) = struct( ...
+                Key = key, ...
+                Title = titleText, ...
+                Row = row, ...
+                Header = header, ...
+                Summary = summary, ...
+                Body = body, ...
+                Height = sum([rowHeights{:}]) + ...
+                    obj.SectionSpacing * (numel(rowHeights) - 1) + ...
+                    2 * obj.SectionPad, ...
+                Open = open);
+
+            obj.applySectionState(numel(obj.Sections));
+
+        end
+
+        function toggleSection(obj, key)
+            %TOGGLESECTION Open the section named, or close it if it is open.
+
+            at = find(string({obj.Sections.Key}) == key, 1);
+
+            if isempty(at)
+                return
+            end
+
+            obj.Sections(at).Open = ~obj.Sections(at).Open;
+            obj.applySectionState(at);
+            obj.refreshSectionSummaries();
+
+        end
+
+        function applySectionState(obj, at)
+            %APPLYSECTIONSTATE Show or hide one section's controls.
+            % The row it occupies is shrunk to its header rather than the
+            % section being hidden, so the ones under it move up to meet it.
+
+            section = obj.Sections(at);
+
+            if section.Open
+                mark = obj.SectionOpenMark;
+                height = obj.SectionHeaderHeight + section.Height;
+            else
+                mark = obj.SectionShutMark;
+                height = obj.SectionHeaderHeight;
+            end
+
+            section.Header.Text = mark + "  " + section.Title;
+            section.Body.Visible = matlab.lang.OnOffSwitchState(section.Open);
+            obj.SectionGrid.RowHeight{section.Row} = height;
+
+        end
+
+        function refreshSectionSummaries(obj)
+            %REFRESHSECTIONSUMMARIES Say what each closed section is holding.
+            % An open section says it in the controls themselves, and is
+            % left to, rather than being told twice on one row.
+
+            for k = 1:numel(obj.Sections)
+
+                if obj.Sections(k).Open
+                    obj.Sections(k).Summary.Text = "";
+                    continue
+                end
+
+                text = obj.sectionSummary(obj.Sections(k).Key);
+
+                if strlength(text) > obj.MaxSummaryChars
+                    text = extractBefore(text, obj.MaxSummaryChars) + "...";
+                end
+
+                obj.Sections(k).Summary.Text = text;
+
+            end
+
+        end
+
+        function text = sectionSummary(obj, key)
+            %SECTIONSUMMARY What one section is holding, in a few words.
+            % Said only of what a closed section could be doing to the plot
+            % without showing it: a rescaling, a comparison, a filter. A
+            % section holding nothing but defaults says nothing at all.
+
+            parts = strings(0, 1);
+
+            switch key
+
+                case "scale"
+
+                    if string(obj.SignalDropDown.Value) ~= "smoothed"
+                        parts(end+1) = string(obj.SignalDropDown.Value);
+                    end
+
+                    if string(obj.NormalizeDropDown.Value) ~= "none"
+                        parts(end+1) = string(obj.NormalizeDropDown.Value);
+                    end
+
+                case "compare"
+
+                    if string(obj.CompareDropDown.Value) ~= "none"
+                        parts(end+1) = string(obj.CompareDropDown.Value) + ...
+                            " by " + string(obj.CompareFieldDropDown.Value);
+                    else
+                        parts(end+1) = "off";
+                    end
+
+                case "plot"
+                    parts(end+1) = string(obj.ShowDropDown.Value);
+
+                    % Which summary, said beside it: a closed panel that
+                    % only says "metric summary" leaves the one thing the
+                    % points on screen actually are unsaid.
+                    if string(obj.ShowDropDown.Value) == "metric summary"
+                        parts(end) = parts(end) + ": " + ...
+                            string(obj.MetricDropDown.Value);
+                    end
+
+                case "split"
+
+                    if string(obj.GroupDropDown.Value) ~= obj.NoField
+                        parts(end+1) = "color " + string(obj.GroupDropDown.Value);
+                    end
+
+                    tiled = string(obj.TileListBox.Value);
+                    tiled = tiled(tiled ~= obj.NoField);
+
+                    if ~isempty(tiled)
+                        parts(end+1) = "tile " + join(tiled, "+");
+                    end
+
+                case "filter"
+
+                    if isempty(obj.Filters)
+                        parts(end+1) = "all sections";
+                    else
+                        parts(end+1) = numel(obj.Filters) + " condition(s)";
+                    end
+
+                case "layout"
+                    parts(end+1) = "legend " + string(obj.LegendDropDown.Value);
+
+                % Configurations says nothing. The name showing in its list
+                % is the one that would be loaded or deleted next, not one
+                % the panel is standing on -- a config is applied and then
+                % edited out from under its name -- and reporting it on a
+                % shut header would claim otherwise.
+
+            end
+
+            if isempty(parts)
+                text = "";
+                return
+            end
+
+            text = join(parts, ", ");
+
+        end
+
+        function buildStatusBar(obj, parent)
+            %BUILDSTATUSBAR One line under both halves, saying what is on screen.
+            % Under the plot as well as the panel, and out of the scroll
+            % region the controls live in, because a count of what is drawn
+            % and a note of what was dropped are about the picture and are
+            % worth nothing where they cannot be seen.
+
+            bar = uipanel(parent, BorderType = "line");
+            bar.Layout.Row = 2;
+            bar.Layout.Column = [1 2];
+
+            frame = uigridlayout(bar, [1 1]);
+            frame.Padding = [8 2 8 2];
+
+            obj.StatusLabel = uilabel(frame, Text = "", WordWrap = "on", ...
+                VerticalAlignment = "center");
+
+        end
+
         function applyDefaults(obj)
             %APPLYDEFAULTS Open on the split this dataset is most likely wanted in.
 
@@ -532,22 +932,296 @@ classdef ECMBrowser < handle
         % Offer the new field's values as references.
         onCompareFieldChanged(obj, redraw)
 
-        function onFilterFieldChanged(obj)
-            %ONFILTERFIELDCHANGED Offer the new field's values, all of them kept.
+        function onFilterFieldChanged(obj, redraw)
+            %ONFILTERFIELDCHANGED Put the editor onto the field just picked.
+            % A field already narrowed comes back the way it was left, so
+            % returning to one widens the condition standing rather than
+            % starting a second beside it; a field never narrowed opens with
+            % every value kept, which constrains nothing. Either way this
+            % moves the editor rather than the filter, so nothing about what
+            % is drawn has changed by the end of it.
+
+            arguments
+                obj
+                redraw (1,1) logical = true
+            end
 
             field = string(obj.FilterFieldDropDown.Value);
 
             if field == obj.AllSections
                 obj.FilterValuesListBox.Items = {};
                 obj.FilterValuesListBox.Enable = "off";
+                obj.FilterSenseDropDown.Enable = "off";
             else
                 levels = obj.levelsOf(field);
                 obj.FilterValuesListBox.Items = cellstr(levels);
-                obj.FilterValuesListBox.Value = cellstr(levels);
                 obj.FilterValuesListBox.Enable = "on";
+                obj.FilterSenseDropDown.Enable = "on";
+
+                at = obj.filterAt(field);
+
+                if isempty(at)
+                    obj.FilterValuesListBox.Value = cellstr(levels);
+                    obj.FilterSenseDropDown.Value = obj.FilterSenses(1);
+                else
+                    obj.FilterValuesListBox.Value = cellstr(obj.Filters(at).Values);
+                    obj.FilterSenseDropDown.Value = obj.senseName(obj.Filters(at).Keep);
+                end
+            end
+
+            if redraw
+                obj.refresh();
+            end
+
+        end
+
+        function onFilterValuesChanged(obj)
+            %ONFILTERVALUESCHANGED Record what the editor now says about its field.
+            % The one place a condition is written down from the panel: both
+            % the values list and the keep/drop choice land here, either of
+            % them being half of the same answer.
+
+            field = string(obj.FilterFieldDropDown.Value);
+
+            if field == obj.AllSections
+                return
+            end
+
+            values = string(obj.FilterValuesListBox.Value);
+            keep = string(obj.FilterSenseDropDown.Value) == obj.FilterSenses(1);
+
+            % Keeping every value, or dropping none, narrows nothing, and is
+            % taken off the list rather than left on it saying so at length.
+            % Keeping none is a condition all the same: it draws an empty
+            % plot, and the status line says how few sections that is.
+            if (keep && numel(values) == numel(obj.levelsOf(field))) || ...
+                    (~keep && isempty(values))
+                obj.dropFilter(field);
+            else
+                obj.recordFilter(field, values, keep);
+            end
+
+            obj.refreshFilterList();
+            obj.refresh();
+
+        end
+
+        function onFilterSelected(obj)
+            %ONFILTERSELECTED Put the editor back on the condition just picked.
+
+            field = string(obj.FilterListBox.Value);
+
+            if isempty(field) || ~ismember(field, string(obj.FilterFieldDropDown.Items))
+                return
+            end
+
+            obj.FilterFieldDropDown.Value = field;
+            obj.onFilterFieldChanged(false);
+
+        end
+
+        function onRemoveFilter(obj)
+            %ONREMOVEFILTER Take the condition now picked off the list.
+
+            field = string(obj.FilterListBox.Value);
+
+            if isempty(field)
+                return
+            end
+
+            obj.dropFilter(field);
+            obj.refreshFilterList();
+
+            % The editor is showing the condition that has just gone, so it
+            % is put back to every value kept rather than left displaying a
+            % narrowing that is no longer in force.
+            if string(obj.FilterFieldDropDown.Value) == field
+                obj.onFilterFieldChanged(false);
             end
 
             obj.refresh();
+
+        end
+
+        function onClearFilters(obj)
+            %ONCLEARFILTERS Drop every condition and draw the whole dataset.
+
+            obj.Filters(:) = [];
+            obj.refreshFilterList();
+            obj.onFilterFieldChanged(false);
+            obj.refresh();
+
+        end
+
+        function at = filterAt(obj, field)
+            %FILTERAT Where FIELD's condition sits in the list, if it has one.
+
+            at = [];
+
+            if isempty(obj.Filters)
+                return
+            end
+
+            at = find([obj.Filters.Field] == field, 1);
+
+        end
+
+        function recordFilter(obj, field, values, keep)
+            %RECORDFILTER Set FIELD's condition, replacing any it already had.
+            % A field is narrowed once: asking a second question of it is
+            % changing the answer to the first, not adding to it.
+
+            condition = struct( ...
+                Field = string(field), ...
+                Values = reshape(string(values), 1, []), ...
+                Keep = logical(keep));
+
+            at = obj.filterAt(field);
+
+            if isempty(at)
+                obj.Filters(end+1) = condition;
+            else
+                obj.Filters(at) = condition;
+            end
+
+        end
+
+        function dropFilter(obj, field)
+            %DROPFILTER Leave FIELD unconstrained.
+
+            at = obj.filterAt(field);
+
+            if ~isempty(at)
+                obj.Filters(at) = [];
+            end
+
+        end
+
+        function name = senseName(obj, keep)
+            %SENSENAME What a condition's direction is called on the panel.
+
+            if keep
+                name = obj.FilterSenses(1);
+            else
+                name = obj.FilterSenses(2);
+            end
+
+        end
+
+        function text = describeFilter(obj, condition)
+            %DESCRIBEFILTER One condition, as the line that stands for it.
+            % Written in the operator rather than in keep and drop, which is
+            % shorter and is what a list of them has to be read down.
+
+            values = reshape(condition.Values, 1, []);
+
+            if numel(values) > obj.MaxFilterTerms
+                values = [values(1:obj.MaxFilterTerms), ...
+                    sprintf("+%d more", numel(values) - obj.MaxFilterTerms)];
+            end
+
+            if condition.Keep
+                operator = " = ";
+            else
+                operator = " ~= ";
+            end
+
+            text = condition.Field + operator + strjoin(values, ", ");
+
+        end
+
+        function refreshFilterList(obj)
+            %REFRESHFILTERLIST Show the conditions now standing.
+
+            obj.FilterListBox.Items = {};
+            obj.FilterListBox.ItemsData = {};
+
+            if isempty(obj.Filters)
+                obj.FilterListBox.Enable = "off";
+                obj.FilterMatchDropDown.Enable = "off";
+                return
+            end
+
+            labels = arrayfun(@(f) obj.describeFilter(f), obj.Filters);
+
+            obj.FilterListBox.Items = cellstr(reshape(labels, 1, []));
+            obj.FilterListBox.ItemsData = cellstr(reshape([obj.Filters.Field], 1, []));
+            obj.FilterListBox.Enable = "on";
+
+            % One condition means the same thing under either rule, so the
+            % choice between them is offered once there are two to combine.
+            obj.FilterMatchDropDown.Enable = ...
+                matlab.lang.OnOffSwitchState(numel(obj.Filters) > 1);
+
+        end
+
+        function keep = filterMask(obj)
+            %FILTERMASK Which sections the conditions standing let through.
+            % Within a condition the values are an OR -- a section holding
+            % any of them satisfies it -- and across conditions the Combine
+            % rule says whether all of them have to be satisfied or one.
+
+            keep = true(height(obj.Files), 1);
+
+            if isempty(obj.Filters)
+                return
+            end
+
+            satisfied = false(height(obj.Files), numel(obj.Filters));
+
+            for k = 1:numel(obj.Filters)
+                condition = obj.Filters(k);
+                hit = ismember(obj.Text.(condition.Field), condition.Values);
+
+                if ~condition.Keep
+                    hit = ~hit;
+                end
+
+                satisfied(:, k) = hit;
+            end
+
+            if string(obj.FilterMatchDropDown.Value) == obj.FilterMatches(2)
+                keep = any(satisfied, 2);
+            else
+                keep = all(satisfied, 2);
+            end
+
+        end
+
+        function list = knownFilters(obj, saved)
+            %KNOWNFILTERS The conditions of SAVED this dataset can still take.
+            % A configuration carries the fields and values of whatever was
+            % open when it was saved. One naming a field this dataset has
+            % not got, or values it does not hold, is dropped rather than
+            % raised as an error -- the same reading APPLYSETTINGS gives a
+            % color-by or tile-by field that has gone.
+
+            list = struct("Field", {}, "Values", {}, "Keep", {});
+
+            if isempty(saved) || ~isstruct(saved)
+                return
+            end
+
+            wanted = ["Field", "Values", "Keep"];
+
+            for k = 1:numel(saved)
+                condition = saved(k);
+
+                if ~all(isfield(condition, wanted)) || ...
+                        ~ismember(string(condition.Field), obj.FilterFields)
+                    continue
+                end
+
+                values = reshape(string(condition.Values), 1, []);
+                values = values(ismember(values, obj.levelsOf(condition.Field)));
+
+                if isempty(values)
+                    continue
+                end
+
+                list(end+1) = struct(Field = string(condition.Field), ...
+                    Values = values, Keep = logical(condition.Keep)); %#ok<AGROW>
+            end
 
         end
 
@@ -567,6 +1241,9 @@ classdef ECMBrowser < handle
             obj.RefMaxField.Value = ceil(max(depth));
             obj.CompareDropDown.Value = "none";
             obj.FilterFieldDropDown.Value = obj.AllSections;
+            obj.FilterMatchDropDown.Value = obj.FilterMatches(1);
+            obj.Filters(:) = [];
+            obj.refreshFilterList();
             obj.onFilterFieldChanged();
 
         end
@@ -759,7 +1436,7 @@ classdef ECMBrowser < handle
         draw(obj, parent)
 
         % Draw one group's sections into one tile.
-        h = drawGroup(obj, ax, x, Y, idx, cols, groupField, groupName, color)
+        h = drawGroup(obj, ax, x, Y, idx, cols, groupField, groupName, color, slot)
 
         % One legend for the whole layout, outside every axes.
         lgd = layoutLegend(obj, ax, groupField, groups, colors, groupOf, placement)
@@ -789,6 +1466,27 @@ classdef ECMBrowser < handle
             scale = obj.Norm.scale(:);
 
             y = (obj.Files.PeakY(rows) - center(rows)) ./ scale(rows);
+
+        end
+
+        function [m, lo, hi] = metricBand(obj, v)
+            %METRICBAND One group's summary values, as a mean and an interval.
+            % Taken through BANDOF, which is what the band around a group
+            % mean is taken through. A row of one value per section is the
+            % same shape as one depth of the profile grid, so the Error band
+            % control means at a point exactly what it means along a curve,
+            % and a bar and a band read off the same arithmetic.
+
+            M = reshape(v, 1, []);
+            n = sum(isfinite(M), 2);
+            m = mean(M, 2, "omitnan");
+
+            if n < 2
+                [lo, hi] = deal(NaN);
+                return
+            end
+
+            [lo, hi] = obj.bandOf(M, n, m);
 
         end
 
@@ -1108,6 +1806,9 @@ classdef ECMBrowser < handle
         % Name the scale the intensities are drawn on.
         text = withNormalization(obj, label)
 
+        % Name what one point of a metric summary measures.
+        label = metricLabel(obj, metric)
+
         function text = withComparison(obj, label)
             %WITHCOMPARISON Say what the curves are a comparison of.
             % Which operation across which field. Which value was measured
@@ -1247,8 +1948,12 @@ classdef ECMBrowser < handle
 
         function setStatus(obj, text)
             %SETSTATUS Report what is on screen.
+            % The bar runs the width of the window and wraps, but a status
+            % line naming several notes at once can still outrun it, so the
+            % whole of it is put on the tooltip as well.
 
             obj.StatusLabel.Text = text;
+            obj.StatusLabel.Tooltip = text;
 
         end
 
@@ -1449,6 +2154,8 @@ classdef ECMBrowser < handle
                 MenuSelectedFcn = @(~,~) obj.onCopyData());
             uimenu(copyTo, Text = "A summary of this view to the clipboard", ...
                 MenuSelectedFcn = @(~,~) obj.copySummary());
+            uimenu(copyTo, Text = "The commands that rebuild this view to the clipboard", ...
+                MenuSelectedFcn = @(~,~) obj.onCopyCommands());
 
             uimenu(m, Text = "Send this view to the workspace", ...
                 MenuSelectedFcn = @(~,~) obj.onSendToWorkspace());
@@ -1713,6 +2420,179 @@ classdef ECMBrowser < handle
 
         % Put a written account of the view on the clipboard.
         copySummary(obj)
+
+        function onCopyCommands(obj)
+            %ONCOPYCOMMANDS Put the commands for this view on the clipboard.
+
+            code = obj.viewCommands();
+
+            try
+                clipboard("copy", strjoin(code, newline))
+            catch ME
+                uialert(obj.Fig, ME.message, "Could not copy the commands");
+                return
+            end
+
+            obj.setStatus(sprintf( ...
+                "%d line(s) of commands for this view copied to the clipboard.", ...
+                numel(code)));
+
+        end
+
+        function name = browserVariable(obj)
+            %BROWSERVARIABLE What this browser is called in the base workspace.
+            % A browser does not know what it was assigned to, and a command
+            % naming the wrong variable is worse than one naming a plausible
+            % variable, so the workspace is asked and B used where it has no
+            % answer -- which is what the help text calls the browser
+            % throughout, and what a browser opened for its side effect has
+            % no name at all.
+
+            name = "B";
+
+            try
+                vars = string(evalin("base", "who"));
+
+                for k = 1:numel(vars)
+                    value = evalin("base", vars(k));
+
+                    if isa(value, "ECMBrowser") && isscalar(value) && value == obj
+                        name = vars(k);
+                        return
+                    end
+                end
+            catch
+                % A workspace that cannot be read is one more reason to
+                % fall back on the name the help text uses.
+            end
+
+        end
+
+        function code = layoutCommands(obj, s, v)
+            %LAYOUTCOMMANDS How the grid is dressed, where it has been changed.
+            % Controls that move nothing but ink, each with one value a
+            % browser opens on, and each set the same way: there is no method
+            % for them because there is nothing to work out, only a value to
+            % put in a control.
+
+            dressing = { ...
+                "LegendDropDown", s.Legend, obj.LegendPlacements(1); ...
+                "SpacingDropDown", s.TileSpacing, obj.TileSpacings(1); ...
+                "PaddingDropDown", s.Padding, obj.LayoutPaddings(1); ...
+                "TickLabelDropDown", s.TickLabels, obj.TickLabelModes(1)};
+
+            code = strings(1, 0);
+
+            for k = 1:size(dressing, 1)
+                if dressing{k, 2} ~= dressing{k, 3}
+                    code(end+1) = v + "." + dressing{k, 1} + ".Value = " + ...
+                        obj.textLiteral(dressing{k, 2}) + ";"; %#ok<AGROW>
+                end
+            end
+
+            boxes = { ...
+                "LinkCheckBox", s.Link, true; ...
+                "TransposeCheckBox", s.Transpose, false; ...
+                "AxisQuantityCheckBox", s.AxisQuantity, false};
+
+            for k = 1:size(boxes, 1)
+                if logical(boxes{k, 2}) ~= boxes{k, 3}
+                    code(end+1) = v + "." + boxes{k, 1} + ".Value = " + ...
+                        string(logical(boxes{k, 2})) + ";"; %#ok<AGROW>
+                end
+            end
+
+        end
+
+        function code = styleCommands(obj, v)
+            %STYLECOMMANDS The colors and line styles picked by hand.
+            % Kept apart from the panel, and so from a saved configuration,
+            % but part of the figure all the same: these are the only way a
+            % palette settled on by right-clicking leaves the browser.
+
+            code = strings(1, 0);
+            keys = sort(string(obj.Styles.keys));
+
+            for k = 1:numel(keys)
+                chosen = obj.Styles(char(keys(k)));
+                args = "";
+
+                if ~isempty(chosen.Color)
+                    args = args + ", Color = " + obj.numberLiteral(chosen.Color);
+                end
+
+                if chosen.LineStyle ~= ""
+                    args = args + ", LineStyle = " + obj.textLiteral(chosen.LineStyle);
+                end
+
+                if args == ""
+                    continue
+                end
+
+                code(end+1) = v + ".setGroupStyle(" + ...
+                    obj.textLiteral(extractBefore(keys(k), "|")) + ", " + ...
+                    obj.textLiteral(extractAfter(keys(k), "|")) + args + ");"; %#ok<AGROW>
+            end
+
+        end
+
+        function code = nextCommands(obj, s, v)
+            %NEXTCOMMANDS What is usually wanted once the view is back.
+            % Commented out rather than run: the commands above are the
+            % figure, and these are the handful of things done to it
+            % afterwards, spelled out so that the browser's help does not
+            % have to be opened to remember which is which.
+
+            calls = [v + ".popOut()", "draws it into a figure of its own"; ...
+                v + ".savePlot(""figure.pdf"")", ...
+                    "PNG, TIFF, JPEG, PDF, EPS, SVG, or .fig"; ...
+                v + ".saveData(""profiles.csv"", Layout = ""long"")", ...
+                    "one row per sample, every field beside it"; ...
+                "d = " + v + ".viewData()", "the numbers behind the plot"; ...
+                v + ".copySummary()", "the account of this view a caption needs"];
+
+            if s.Group ~= obj.NoField
+                levels = obj.levelsOf(s.Group);
+
+                calls(end+1, :) = [v + ".setGroupStyle(" + ...
+                    obj.textLiteral(s.Group) + ", " + ...
+                    obj.textLiteral(levels(1)) + ", Color = [0 0 0])", ...
+                    "one group in a color of your own"];
+            end
+
+            code = ["", "% And what can then be done with it:", ...
+                reshape("%   " + pad(calls(:, 1)) + "   " + calls(:, 2), 1, [])];
+
+        end
+
+        function text = textLiteral(~, values)
+            %TEXTLITERAL One value, or several, as they would be typed in.
+
+            values = string(values);
+            values = """" + replace(values, """", """""") + """";
+
+            if isscalar(values)
+                text = values;
+                return
+            end
+
+            text = "[" + strjoin(reshape(values, 1, []), " ") + "]";
+
+        end
+
+        function text = numberLiteral(~, values)
+            %NUMBERLITERAL One number, or several, at a length that reads back.
+
+            parts = arrayfun(@(x) string(sprintf("%g", x)), double(values(:)'));
+
+            if isscalar(parts)
+                text = parts;
+                return
+            end
+
+            text = "[" + strjoin(parts, " ") + "]";
+
+        end
 
         function pickColor(obj, groupField, level)
             %PICKCOLOR Ask for a color for one group and put it on every plot.

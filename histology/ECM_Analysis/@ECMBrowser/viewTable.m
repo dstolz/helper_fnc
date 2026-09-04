@@ -2,6 +2,10 @@ function T = viewTable(obj, layout)
     %VIEWTABLE The current view as one table, in the layout asked for.
     % The three tables SAVEDATA writes, built here rather than there so
     % that the clipboard and the file are handed the same one.
+    %
+    % The one row per section carries the summary metric in force
+    % alongside the peak, so the numbers a statistics package is handed
+    % are the ones the plot beside it was made of.
 
     v = obj.viewData();
 
@@ -61,6 +65,14 @@ function T = viewTable(obj, layout)
             if v.comparison == ""
                 T.PeakY_drawn = v.peakHeight;
             end
+
+            % And the summary metric beside it, named for whichever one
+            % it is so that two exports taken under two metrics do not
+            % come back looking like the same column twice. Written out
+            % whether or not the plot is showing it: this table is the
+            % one row per section, and a per-section number belongs in
+            % it wherever the Show control happens to be left.
+            T.(matlab.lang.makeValidName("Metric_" + v.metricName)) = v.metric;
 
             named = matlab.lang.makeUniqueStrings( ...
                 ["Section", string(T.Properties.VariableNames)], 1);

@@ -90,7 +90,12 @@ A = ecm_prepare_analysis_data(histology, ...
     normalizeMode = "none");
 
 
-launch_ecm_browser(A);
+B = launch_ecm_browser(A);
+
+%%
+
+B.setComparison("difference", "Treatment", ...
+    reference = "Vehicle", within = ["SubjectID" "AtlasPlate"])
 
 
 

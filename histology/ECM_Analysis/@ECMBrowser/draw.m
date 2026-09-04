@@ -36,6 +36,11 @@ function draw(obj, parent)
     tileBy = obj.tileFields();
     groupField = string(obj.GroupDropDown.Value);
 
+    % The metric summary plots one point per section against the group it
+    % belongs to, so its axes are dressed differently from the ones every
+    % other mode draws a depth along.
+    onMetric = string(obj.ShowDropDown.Value) == "metric summary";
+
     [tiles, tileOf, nCols] = obj.tiling(tileBy, idx);
     [groups, groupOf] = obj.splitBy(groupField, idx);
 
@@ -134,7 +139,7 @@ function draw(obj, parent)
             end
 
             artists = obj.drawGroup(ax, x, Y, idx, cols, ...
-                groupField, groups(iGroup), colors(iGroup, :));
+                groupField, groups(iGroup), colors(iGroup, :), iGroup);
 
             set(artists, 'ContextMenu', groupMenus(char(groups(iGroup))))
         end
@@ -147,7 +152,22 @@ function draw(obj, parent)
 
         grid(ax, "on")
         box(ax, "on")
-        axis(ax, "tight")
+
+        if onMetric
+            % The x axis carries groups rather than depths, so it is
+            % given one tick per group of the whole layout -- the same
+            % ticks in every tile, whether or not this one held every
+            % group -- and a slot's width of air at either end. Padded
+            % rather than tight because a tight fit cuts the highest and
+            % lowest markers in half against the box.
+            axis(ax, "padded")
+            xlim(ax, [0.5, numel(groups) + 0.5])
+            xticks(ax, 1:numel(groups))
+            xticklabels(ax, groups)
+            ax.TickLabelInterpreter = "none";
+        else
+            axis(ax, "tight")
+        end
 
         if placement == "per tile" && numel(groups) > 1
             legend(ax, Interpreter = "none", Location = "best")

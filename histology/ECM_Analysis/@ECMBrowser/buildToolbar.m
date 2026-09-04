@@ -23,6 +23,9 @@ function buildToolbar(obj, parent)
         "Copy summary", "Copy a written account of every choice " + ...
             "behind this view: the scale, what is shown, split, and filtered.", ...
             @() obj.copySummary(); ...
+        "Copy code", "Copy the commands that put a browser back in " + ...
+            "this view, ready to paste into a script.", ...
+            @() obj.onCopyCommands(); ...
         "To workspace", "Put the numbers behind the plot in the " + ...
             "base workspace.", ...
             @() obj.onSendToWorkspace(); ...
@@ -35,7 +38,7 @@ function buildToolbar(obj, parent)
     isGap = cellfun(@isempty, buttons(:,3));
 
     widths = repmat({'fit'}, 1, size(buttons, 1));
-    widths(isGap) = {10};
+    widths(isGap) = {11};
 
     % One trailing column takes whatever room is left, so the buttons
     % stay together at the left rather than spreading over the width.
@@ -48,6 +51,7 @@ function buildToolbar(obj, parent)
     for k = 1:size(buttons, 1)
 
         if isGap(k)
+            divider(grid, k);
             continue
         end
 
@@ -58,5 +62,25 @@ function buildToolbar(obj, parent)
         button.Layout.Column = k;
 
     end
+
+end
+
+function divider(grid, column)
+    %DIVIDER A hairline between one group of buttons and the next.
+    % The gap alone read as one long row of buttons that happened to be
+    % unevenly spaced. A line in the middle of the gap says which of them
+    % go together, and is drawn as a panel of its own inside the column
+    % because a panel is sized by its parent rather than by a width of
+    % its own.
+
+    slot = uigridlayout(grid, [1 1]);
+    slot.Layout.Column = column;
+    slot.ColumnWidth = {1};
+    slot.RowHeight = {'1x'};
+    slot.Padding = [5 4 5 4];
+
+    % Painted rather than bordered: a panel one pixel wide has nowhere to
+    % put a border but on top of itself, and comes out as nothing at all.
+    uipanel(slot, BorderType = "none", BackgroundColor = [0.72 0.72 0.72]);
 
 end
