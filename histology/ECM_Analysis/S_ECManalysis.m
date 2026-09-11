@@ -73,10 +73,31 @@ ind = histology.Hemisphere == "L";
 d(ind) = histology.AtlasPlate(ind) - histology.LeftCannulaPlate(ind);
 ind = histology.Hemisphere == "R";
 d(ind) = histology.AtlasPlate(ind) - histology.RightCannulaPlate(ind);
+ind = histology.Condition == "Control";
+d(ind) = histology.AtlasPlate(ind) - 30;
 histology.CannulaDist = d;
 
 
-% prep data for analysis
+% save
+ffnOut = "D:/GM6001_HISTOLOGY/ECM Projects - GM6001 - full.mat";
+save(ffnOut,"histology")
+
+
+
+
+
+
+% export for R
+
+ecm_export_for_r(ffnOut,"D:/GM6001_HISTOLOGY")
+
+
+
+
+
+
+
+%% prep data for analysis
 
 voi = ["SubjectID", "AtlasPlate", "Treatment"];
 % voi = ["SubjectID", "AtlasPlate", "Hemisphere"];
@@ -93,9 +114,69 @@ A = ecm_prepare_analysis_data(histology, ...
 B = launch_ecm_browser(A);
 
 %%
-
+% The ECM Browser view of 2026-09-07 14:53, as commands.
+% Everything not named here is what a browser opens on.
 B.setComparison("difference", "Treatment", ...
-    reference = "Vehicle", within = ["SubjectID" "AtlasPlate"])
+    reference = "Vehicle", within = "AtlasPlate");
+B.GroupDropDown.Value = "SubjectID";
+B.setTiling("AtlasPlate");
+B.setFilter("IncludeInAnalysis", "TRUE");
+B.setFilter("Condition", "Trained");
+B.setFilter("AtlasPlate", ["28" "29" "30" "31" "32"]);
+B.DepthMinField.Value = 0;
+B.DepthMaxField.Value = 2000;
+B.SpacingDropDown.Value = "none";
+B.TickLabelDropDown.Value = "left and bottom axes";
+B.refresh();
+
+% And what can then be done with it:
+%   B.popOut()                                                      draws it into a figure of its own
+%   B.savePlot("figure.pdf")                                        PNG, TIFF, JPEG, PDF, EPS, SVG, or .fig
+%   B.saveData("profiles.csv", Layout = "long")                     one row per sample, every field beside it
+%   d = B.viewData()                                                the numbers behind the plot
+%   B.copySummary()                                                 the account of this view a caption needs
+%   B.setGroupStyle("SubjectID", "SUBJ-ID-1174", Color = [0 0 0])   one group in a color of your own
 
 
+%% GM6001 - Vehicle within sections
+% The ECM Browser view of 2026-09-04 15:53, as commands.
+% Everything not named here is what a browser opens on.
+B.setComparison("difference", "Treatment", ...
+    reference = "Vehicle", within = ["SubjectID" "AtlasPlate"]);
+B.GroupDropDown.Value = "SubjectID";
+B.setTiling("AtlasPlate");
+B.setFilter("IncludeInAnalysis", "TRUE");
+B.setFilter("Condition", "Trained");
+B.DepthMinField.Value = 0;
+B.DepthMaxField.Value = 1600;
+B.refresh();
 
+% And what can then be done with it:
+%   B.popOut()                                                      draws it into a figure of its own
+%   B.savePlot("figure.pdf")                                        PNG, TIFF, JPEG, PDF, EPS, SVG, or .fig
+%   B.saveData("profiles.csv", Layout = "long")                     one row per sample, every field beside it
+%   d = B.viewData()                                                the numbers behind the plot
+%   B.copySummary()                                                 the account of this view a caption needs
+%   B.setGroupStyle("SubjectID", "SUBJ-ID-1174", Color = [0 0 0])   one group in a color of your own
+
+%% Compare Treated vs Controls by Atlas Plate
+% The ECM Browser view of 2026-09-08 12:06, as commands.
+% Everything not named here is what a browser opens on.
+B.ShowDropDown.Value = "group mean";
+B.GroupDropDown.Value = "Treatment";
+B.setTiling(["AtlasPlate" "Condition"]);
+B.setFilter("IncludeInAnalysis", "TRUE");
+B.setFilter("AtlasPlate", ["28" "29" "30" "31" "32"]);
+B.DepthMinField.Value = 0;
+B.DepthMaxField.Value = 2000;
+B.SpacingDropDown.Value = "none";
+B.TickLabelDropDown.Value = "left and bottom axes";
+B.refresh();
+
+% And what can then be done with it:
+%   B.popOut()                                                   draws it into a figure of its own
+%   B.savePlot("figure.pdf")                                     PNG, TIFF, JPEG, PDF, EPS, SVG, or .fig
+%   B.saveData("profiles.csv", Layout = "long")                  one row per sample, every field beside it
+%   d = B.viewData()                                             the numbers behind the plot
+%   B.copySummary()                                              the account of this view a caption needs
+%   B.setGroupStyle("Treatment", "Control L", Color = [0 0 0])   one group in a color of your own
