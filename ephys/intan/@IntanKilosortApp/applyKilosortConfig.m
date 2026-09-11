@@ -35,7 +35,7 @@ for k = 1:numel(legacy)
 end
 
 if isfield(cfg, 'ExtraSettings')
-    obj.ExtraSettingsArea.Value = cellstr(splitlines(string(cfg.ExtraSettings)));
+    setIf(@() set(obj.ExtraSettingsArea, 'Value', cellstr(splitlines(string(cfg.ExtraSettings)))));
 end
 end
 
