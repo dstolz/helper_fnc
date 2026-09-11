@@ -23,6 +23,10 @@ classdef IntanKilosortApp < handle
     %     5. Kilosort   Expose Kilosort4 / .bin configuration, save & reload it,
     %                   and batch-process selected datasets (.bin then KS4) with
     %                   per-dataset progress.
+    %     6. Convert    Run INTAN2MATLAB (LFP / MUA / SPIKE + digital events) on
+    %                   the selected datasets with every option exposed, and
+    %                   save one .mat per dataset (default: next to the raw
+    %                   data), with in-tab progress, status and a Cancel button.
     %
     %   User preferences (paths, config, and the figure position/size) persist
     %   across sessions via getpref/setpref under the 'IntanKilosortApp' group.
@@ -54,6 +58,7 @@ classdef IntanKilosortApp < handle
         TabProbe     matlab.ui.container.Tab
         TabKilosort  matlab.ui.container.Tab
         TabReview    matlab.ui.container.Tab
+        TabConvert   matlab.ui.container.Tab
 
         % --- Datasets tab ---
         RootPathField    matlab.ui.control.EditField
@@ -158,6 +163,7 @@ classdef IntanKilosortApp < handle
         ReviewDatasetDropDown matlab.ui.control.DropDown
         LoadReviewButton    matlab.ui.control.Button
         OpenReviewFolderButton matlab.ui.control.Button
+        ReviewPhyButton     matlab.ui.control.Button
         ReviewSummaryLabel  matlab.ui.control.Label
         ReviewUnitsTable    matlab.ui.control.Table
         ReviewAllUnitsButton matlab.ui.control.Button
@@ -165,6 +171,42 @@ classdef IntanKilosortApp < handle
         ReviewWaveAxes      matlab.ui.control.UIAxes
         ReviewAmpAxes       matlab.ui.control.UIAxes
         ReviewRateAxes      matlab.ui.control.UIAxes
+
+        % --- Convert tab (intan2matlab; see buildConvertTab / onRunConvert) ---
+        ConvOutputDirField      matlab.ui.control.EditField
+        ConvBrowseOutputButton  matlab.ui.control.Button
+        ConvSuffixField         matlab.ui.control.EditField
+        ConvMatVersionDropDown  matlab.ui.control.DropDown
+        ConvOverwriteCheckBox   matlab.ui.control.CheckBox
+        ConvLFPCheckBox         matlab.ui.control.CheckBox
+        ConvMUACheckBox         matlab.ui.control.CheckBox
+        ConvSPIKECheckBox       matlab.ui.control.CheckBox
+        ConvLFPFsField          matlab.ui.control.NumericEditField
+        ConvMUAFsField          matlab.ui.control.NumericEditField
+        ConvMUAIntegrationField matlab.ui.control.NumericEditField
+        ConvMUALoField          matlab.ui.control.NumericEditField
+        ConvMUAHiField          matlab.ui.control.NumericEditField
+        ConvSpikeOrigCheckBox   matlab.ui.control.CheckBox
+        ConvSpikeFsField        matlab.ui.control.NumericEditField
+        ConvSpikeLoField        matlab.ui.control.NumericEditField
+        ConvSpikeHiField        matlab.ui.control.NumericEditField
+        ConvLabelFieldDropDown  matlab.ui.control.DropDown
+        ConvKeepChannelsField   matlab.ui.control.EditField
+        ConvBadModeDropDown     matlab.ui.control.DropDown
+        ConvBadThresholdField   matlab.ui.control.NumericEditField
+        ConvBadListField        matlab.ui.control.EditField
+        ConvRemapField          matlab.ui.control.EditField
+        ConvResetButton         matlab.ui.control.Button
+        ConvTargetsTable        matlab.ui.control.Table
+        ConvRunButton           matlab.ui.control.Button
+        ConvCancelButton        matlab.ui.control.Button
+        ConvRefreshButton       matlab.ui.control.Button
+        ConvOverallBar          matlab.ui.container.GridLayout   % see setConvertBar
+        ConvOverallText         matlab.ui.control.Label
+        ConvStepBar             matlab.ui.container.GridLayout
+        ConvStepText            matlab.ui.control.Label
+        ConvStepLabel           matlab.ui.control.Label
+        ConvLogArea             matlab.ui.control.TextArea
     end
 
     properties
@@ -231,6 +273,13 @@ classdef IntanKilosortApp < handle
         % loadReviewResults / renderReviewPlots.
         ReviewData = struct([])
         ReviewSelectedUnit (1,1) double = 0   % row index into ReviewData unit list (0 = all)
+
+        % --- Convert (intan2matlab) run state ---
+        % ConvRunning guards against re-entry and freezes the targets table;
+        % ConvCancelRequested is set by the Cancel button and checked by the
+        % intan2matlab ProgressFcn at each step boundary (see onRunConvert).
+        ConvRunning (1,1) logical = false
+        ConvCancelRequested (1,1) logical = false
     end
 
     properties (Constant)
@@ -257,6 +306,7 @@ classdef IntanKilosortApp < handle
         buildProbeTab(obj)
         buildKilosortTab(obj)
         buildReviewTab(obj)
+        buildConvertTab(obj)
 
         onScan(obj)
         refreshDatasetsTable(obj)
@@ -289,10 +339,15 @@ classdef IntanKilosortApp < handle
 
         onRunBatch(obj, mode)
         onLaunchPhy(obj)
+        launchPhy(obj, resultsDir, label)
         pollKSRuns(obj)
 
         loadReviewResults(obj)
         renderReviewPlots(obj)
+
+        onRunConvert(obj)
+        cfg = gatherConvertConfig(obj)
+        applyConvertConfig(obj, cfg)
 
         loadPreferences(obj)
         savePreferences(obj)
@@ -394,6 +449,18 @@ classdef IntanKilosortApp < handle
             if ispc; winopen(f); else; system(sprintf('open "%s" &', f)); end
         end
 
+        function onReviewOpenPhy(obj)
+            % Open the Review tab's results folder in phy's template-gui.
+            % Load/Browse/dataset-pick rewrite the field to the resolved folder
+            % holding params.py, so the field is what gets launched.
+            f = strtrim(obj.ReviewFolderField.Value);
+            if isempty(f) || ~isfolder(f)
+                uialert(obj.Fig, "Select a valid results folder first.", "phy");
+                return
+            end
+            obj.launchPhy(f, f);
+        end
+
         function populateReviewDatasets(obj)
             % Fill the Review dataset dropdown from scanned datasets that have a
             % kilosort4 run with spike results. Discovery is delegated to each
@@ -460,8 +527,157 @@ classdef IntanKilosortApp < handle
             obj.renderReviewPlots();
         end
 
+        %% --- Convert tab (intan2matlab) ----------------------------------
+        function cfg = defaultConvertConfig(~)
+            % Convert-tab defaults. The intan2matlab options mirror that
+            % function's own defaults (dataTypeOut "LFP", LFP_Fs 1000, MUA_Fs
+            % 2000, MUA_IntegrationHz 1000, band edges [300 5000], SPIKE_Fs
+            % Inf, labelField custom_channel_name, no channel selection /
+            % bad channels / remap). OutputDir "" = each dataset's folder.
+            cfg = struct( ...
+                'OutputDir',          "", ...
+                'Suffix',             "_intan2matlab", ...
+                'MatVersion',         "-v7.3", ...
+                'Overwrite',          false, ...
+                'LFP',                true, ...
+                'MUA',                false, ...
+                'SPIKE',              false, ...
+                'LFP_Fs',             1000, ...
+                'MUA_Fs',             2000, ...
+                'MUA_IntegrationHz',  1000, ...
+                'MUA_bpLoHi',         [300 5000], ...
+                'SPIKE_KeepOriginal', true, ...
+                'SPIKE_Fs',           20000, ...   % used only when KeepOriginal is off
+                'SPIKE_bpLoHi',       [300 5000], ...
+                'LabelField',         "custom_channel_name", ...
+                'KeepChannels',       "", ...
+                'BadMode',            "none", ...  % "none" | "manual" | "auto"
+                'BadThreshold',       3, ...       % auto: |zscore(RMS)| threshold
+                'BadList',            "", ...
+                'ChannelRemap',       "");
+        end
+
+        function syncConvertEnableStates(obj)
+            % Enable each option only when the signal/mode it belongs to is on.
+            if isempty(obj.ConvLFPCheckBox) || ~isvalid(obj.ConvLFPCheckBox); return; end
+            onOff = @(tf) matlab.lang.OnOffSwitchState(logical(tf));
+            lfp = obj.ConvLFPCheckBox.Value;
+            mua = obj.ConvMUACheckBox.Value;
+            spk = obj.ConvSPIKECheckBox.Value;
+            obj.ConvLFPFsField.Enable = onOff(lfp);
+            set([obj.ConvMUAFsField, obj.ConvMUAIntegrationField, ...
+                obj.ConvMUALoField, obj.ConvMUAHiField], 'Enable', onOff(mua));
+            obj.ConvSpikeOrigCheckBox.Enable = onOff(spk);
+            obj.ConvSpikeFsField.Enable = onOff(spk && ~obj.ConvSpikeOrigCheckBox.Value);
+            set([obj.ConvSpikeLoField, obj.ConvSpikeHiField], 'Enable', onOff(spk));
+            mode = string(obj.ConvBadModeDropDown.Value);
+            obj.ConvBadThresholdField.Enable = onOff(mode == "auto");
+            obj.ConvBadListField.Enable = onOff(mode == "manual");
+        end
+
+        function onConvertControlsChanged(obj)
+            % Sync enable states, refresh the output-file preview, persist.
+            obj.syncConvertEnableStates();
+            obj.refreshConvertTargets();
+            obj.savePreferences();
+        end
+
+        function onResetConvertConfig(obj)
+            % Restore the Convert tab to its defaults.
+            obj.applyConvertConfig(obj.defaultConvertConfig());
+            obj.onConvertControlsChanged();
+        end
+
+        function onBrowseConvertOutput(obj)
+            % Prompt for the folder that receives the intan2matlab .mat files.
+            start = obj.ConvOutputDirField.Value;
+            if isempty(start) || ~isfolder(start); start = obj.RootPathField.Value; end
+            if isempty(start) || ~isfolder(start); start = pwd; end
+            d = uigetdir(start, "Select output folder for intan2matlab .mat files");
+            figure(obj.Fig);
+            if isequal(d, 0); return; end
+            obj.ConvOutputDirField.Value = d;
+            obj.onConvertControlsChanged();
+        end
+
+        function onCancelConvert(obj)
+            % Ask a running conversion to stop at the next step boundary.
+            if ~obj.ConvRunning; return; end
+            obj.ConvCancelRequested = true;
+            obj.ConvCancelButton.Enable = "off";
+            obj.ConvStepLabel.Text = "Cancelling after the current step...";
+        end
+
+        function T = convertTargets(obj, cfg)
+            % One row per dataset a Convert run would process (Datasets-tab
+            % ticks, or all), with its output file and a pre-run status.
+            T = table('Size', [0 5], ...
+                'VariableTypes', {'double', 'string', 'string', 'string', 'string'}, ...
+                'VariableNames', {'DatasetIdx', 'Dataset', 'Format', 'OutputFile', 'Status'});
+            if isempty(obj.Project) || obj.Project.NumDatasets == 0; return; end
+            outRoot = strtrim(string(cfg.OutputDir));
+            for k = obj.selectedDatasetIndices()
+                d = obj.Project.Datasets(k);
+                if strlength(outRoot) == 0
+                    outDir = d.Folder;   % default: next to the raw data
+                else
+                    outDir = outRoot;
+                end
+                f = string(fullfile(outDir, d.Name + string(cfg.Suffix) + ".mat"));
+                if d.RecordingFormat ~= "traditional"
+                    st = "will skip: " + d.RecordingFormat + " layout";
+                elseif isfile(f) && cfg.Overwrite
+                    st = "exists: will overwrite";
+                elseif isfile(f)
+                    st = "exists: will skip";
+                else
+                    st = "ready";
+                end
+                T(end+1, :) = {k, d.Name, d.RecordingFormat, f, st}; %#ok<AGROW>
+            end
+        end
+
+        function refreshConvertTargets(obj)
+            % Rebuild the targets table (not while a run is updating it).
+            if obj.ConvRunning || isempty(obj.ConvTargetsTable) ...
+                    || ~isvalid(obj.ConvTargetsTable)
+                return
+            end
+            T = obj.convertTargets(obj.gatherConvertConfig());
+            obj.ConvTargetsTable.Data = T(:, {'Dataset', 'Format', 'OutputFile', 'Status'});
+        end
+
+        function setConvertBar(~, bar, frac)
+            % Show FRAC (0..1) on a Convert-tab progress bar by weighting its
+            % two grid columns (filled | empty); integer weights, 0.1% steps.
+            if isempty(bar) || ~isvalid(bar); return; end
+            w = round(1000 * min(max(frac, 0), 1));
+            if w <= 0
+                bar.ColumnWidth = {0, '1x'};
+            elseif w >= 1000
+                bar.ColumnWidth = {'1x', 0};
+            else
+                bar.ColumnWidth = {sprintf('%dx', w), sprintf('%dx', 1000 - w)};
+            end
+        end
+
+        function convLog(obj, fmt, varargin)
+            % Append a timestamped line to the Convert log area.
+            if isempty(obj.ConvLogArea) || ~isvalid(obj.ConvLogArea); return; end
+            line = string(datetime('now', 'Format', 'HH:mm:ss')) + "  " + ...
+                string(sprintf(fmt, varargin{:}));
+            cur = obj.ConvLogArea.Value;
+            if isscalar(cur) && strlength(string(cur{1})) == 0
+                cur = cell(0, 1);   % drop the default blank line
+            end
+            obj.ConvLogArea.Value = [cur; cellstr(line)];
+            scroll(obj.ConvLogArea, 'bottom');
+            drawnow limitrate;
+        end
+
         function onClose(obj)
             % Persist preferences (incl. figure geometry) and close.
+            obj.ConvCancelRequested = true;   % stop a running conversion
             obj.stopKSMonitor();
             try
                 obj.savePreferences();
@@ -534,6 +750,9 @@ classdef IntanKilosortApp < handle
                     msg = "Kilosort: set paths + SpikeInterface preprocessing, then Run Kilosort4.";
                 case obj.TabReview
                     msg = "Review: load a results folder to inspect sorted units.";
+                case obj.TabConvert
+                    msg = "Convert: run intan2matlab (LFP / MUA / SPIKE) on the ticked datasets and save .mat files.";
+                    obj.refreshConvertTargets();
                 otherwise
                     msg = "Ready.";
             end

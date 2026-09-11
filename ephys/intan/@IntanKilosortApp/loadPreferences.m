@@ -75,6 +75,14 @@ if ispref(g, 'KilosortConfig')
     end
 end
 
+% --- intan2matlab (Convert tab) options ---
+if ispref(g, 'ConvertConfig')
+    cfg = getpref(g, 'ConvertConfig');
+    if isstruct(cfg)
+        obj.applyConvertConfig(cfg);
+    end
+end
+
 % Seed the Python exe on first launch with the kilosort env python (the
 % SpikeInterface + Kilosort4 environment) when nothing was restored.
 if strlength(strtrim(string(obj.PythonExeField.Value))) == 0

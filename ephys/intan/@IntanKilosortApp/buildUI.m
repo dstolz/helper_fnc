@@ -1,5 +1,5 @@
 function buildUI(obj)
-%buildUI  Create the figure and the five tabs.
+%buildUI  Create the figure, the tabs and the status bar.
 
 pos = [120 90 1180 760];   % default; overridden by saved pref in loadPreferences
 obj.Fig = uifigure("Name", "Intan -> Kilosort4", "Position", pos);
@@ -27,13 +27,15 @@ obj.Tabs.SelectionChangedFcn = @(~,~) obj.onTabChanged();
 buildStatusBar(obj, outer);
 
 % Tab order (left to right): Datasets, Probe, Artifacts, Visualize, Kilosort,
-% Review. Probe sits next to Datasets; Visualize sits to the right of Artifacts.
+% Review, Convert. Probe sits next to Datasets; Visualize sits to the right of
+% Artifacts; Convert (intan2matlab .mat export) is independent of the KS4 path.
 obj.TabDatasets  = uitab(obj.Tabs, "Title", "Datasets");
 obj.TabProbe     = uitab(obj.Tabs, "Title", "Probe");
 obj.TabArtifacts = uitab(obj.Tabs, "Title", "Artifacts");
 obj.TabVisualize = uitab(obj.Tabs, "Title", "Visualize");
 obj.TabKilosort  = uitab(obj.Tabs, "Title", "Kilosort");
 obj.TabReview    = uitab(obj.Tabs, "Title", "Review");
+obj.TabConvert   = uitab(obj.Tabs, "Title", "Convert");
 
 obj.buildDatasetsTab();
 obj.buildVisualizeTab();
@@ -41,6 +43,7 @@ obj.buildArtifactsTab();
 obj.buildProbeTab();
 obj.buildKilosortTab();
 obj.buildReviewTab();
+obj.buildConvertTab();
 
 obj.onTabChanged();   % seed the status bar for the initially-shown tab
 end

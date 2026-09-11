@@ -17,17 +17,18 @@ function [Y, events, info] = intan2matlab(RHDroot, options)
 %           Y.MUA   nSamplesMUA×nChan single
 %               Multiunit envelope derived from the amplifier data using a
 %               zero-phase 4th-order Butterworth bandpass defined by
-%               options.MUA_bpLoHi (Hz, designed at origFs), followed by
-%               rectification (ABS) and moving-mean integration with window
-%               length round(options.MUA_Fs/options.MUA_IntegrationHz). The
-%               resulting envelope is represented on the MUA sampling grid
-%               options.MUA_Fs.
+%               options.MUA_bpLoHi (Hz, designed and applied at origFs),
+%               followed by rectification (ABS), resampling of the rectified
+%               signal to the MUA sampling grid options.MUA_Fs, and
+%               moving-mean integration on that grid with window length
+%               round(options.MUA_Fs/options.MUA_IntegrationHz) samples.
 %
 %           Y.SPIKE nSamplesSPIKE×nChan single
 %               Spike-band signal obtained by optional resampling to
 %               options.SPIKE_Fs (or original sampling if SPIKE_Fs = inf),
 %               then zero-phase 4th-order Butterworth bandpass filtering
-%               using options.SPIKE_bpLoHi (Hz, designed at origFs).
+%               using options.SPIKE_bpLoHi (Hz, designed at SPIKE_Fs, i.e. the
+%               rate of the data being filtered).
 %
 %   EVENTS  struct
 %           One field per digital input line. Field names are taken from the
@@ -64,13 +65,17 @@ function [Y, events, info] = intan2matlab(RHDroot, options)
 %
 %   options.channelRemap       integer vector []
 %       Optional final channel order (1-based) applied after processing.
+%       INFO.labels is reordered identically so labels stay matched to the
+%       columns of Y.
 %
 %   options.badChannels        integer vector or scalar []
 %       1-based channel indices to spatially interpolate across columns
-%       AFTER concatenation using FILLMISSING(...,'makima',2).
-%       If a scalar negative value is provided and LFP is requested,
-%       channels are auto-flagged as outliers by abs(zscore(rms)) > abs(value)
-%       (heuristic).
+%       AFTER concatenation using FILLMISSING(...,'makima',2). Indices refer
+%       to the columns after keepAmpChannels and BEFORE channelRemap.
+%       If a scalar negative value is provided, channels are auto-flagged as
+%       outliers by abs(zscore(rms(LFP))) > abs(value) (heuristic); this
+%       requires "LFP" in dataTypeOut. The channels actually interpolated are
+%       recorded in INFO.importOptions.badChannels.
 %
 %   options.LFP_Fs             scalar Hz      1000
 %       Target LFP sampling rate for Y.LFP.
@@ -97,6 +102,16 @@ function [Y, events, info] = intan2matlab(RHDroot, options)
 %       Field within Intan channel structs used to label amplifier and
 %       digital input lines (e.g., "custom_channel_name" or
 %       "native_channel_name").
+%
+%   options.ProgressFcn        function handle []
+%       Optional progress callback, called as
+%           ProgressFcn(nDone, nTotal, message)
+%       before each step (one step per *.rhd file read, then one per
+%       processing stage) and once more as ProgressFcn(nTotal, nTotal, "Done")
+%       at the end. nDone is the number of steps already completed. The
+%       callback may throw an error to abort the import. When empty, progress
+%       is printed to the command window with PARFOR_PROGRESS. The handle is
+%       not stored in INFO.importOptions.
 %
 %   Notes
 %   -----
@@ -128,11 +143,29 @@ arguments
     options.MUA_bpLoHi (1,2) double {mustBePositive} = [300 5000]
     options.SPIKE_bpLoHi (1,2) double {mustBePositive} = [300 5000]
     options.labelField (1,1) string = "custom_channel_name"
+    options.ProgressFcn = []
 end
 
-% Validate MUA_bpLoHi ordering
+if ~isempty(options.ProgressFcn) && ~isa(options.ProgressFcn, 'function_handle')
+    error('INTAN2MATLAB:ProgressFcn', 'ProgressFcn must be a function handle or [].');
+end
+progressFcn = options.ProgressFcn;
+options = rmfield(options, 'ProgressFcn');   % never stored in info.importOptions
+
+% Validate dataTypeOut values
+badType = setdiff(options.dataTypeOut, ["LFP" "MUA" "SPIKE"]);
+if ~isempty(badType)
+    error('INTAN2MATLAB:dataTypeOut', ...
+        'Unknown dataTypeOut value(s): %s. Use "LFP", "MUA" and/or "SPIKE".', ...
+        strjoin(badType, ', '));
+end
+
+% Validate band-edge ordering
 if options.MUA_bpLoHi(1) >= options.MUA_bpLoHi(2)
     error('INTAN2MATLAB:MUA_bpLoHiOrder','MUA_bpLoHi must be [low high] with low < high.');
+end
+if options.SPIKE_bpLoHi(1) >= options.SPIKE_bpLoHi(2)
+    error('INTAN2MATLAB:SPIKE_bpLoHiOrder','SPIKE_bpLoHi must be [low high] with low < high.');
 end
 
 % Discover files and sort chronologically by datenum (fallback to name if needed)
@@ -149,6 +182,19 @@ has.LFP = any(options.dataTypeOut == "LFP");
 has.MUA = any(options.dataTypeOut == "MUA");
 has.SPIKE = any(options.dataTypeOut == "SPIKE");
 
+autoBad = isscalar(options.badChannels) && options.badChannels < 0;
+if autoBad && ~has.LFP
+    error('INTAN2MATLAB:AutoBadChannelsNeedLFP', ...
+        ['Automatic bad-channel detection (negative scalar badChannels) is ' ...
+         'computed from the LFP; include "LFP" in dataTypeOut.']);
+end
+
+% Progress steps: one per file, then one per processing stage.
+nProc = has.LFP + has.MUA + has.SPIKE + ~isempty(options.badChannels) ...
+    + ~isempty(options.channelRemap) + 1;   % +1 = digital events
+nSteps = numel(D) + nProc;
+nDone  = 0;
+
 
 digData = cell(size(D));
 
@@ -158,8 +204,10 @@ Y.SPIKE = single([]);
 AMPSIG = single([]);
 
 fprintf('Reading RHD data from %d files\n',numel(D))
-parfor_progress(numel(D))
+if isempty(progressFcn), parfor_progress(numel(D)); end
 for i = 1:numel(D)
+    nDone = reportProgress(progressFcn, nDone, nSteps, ...
+        sprintf('Reading file %d/%d: %s', i, numel(D), D(i).name));
     ffn = fullfile(D(i).folder, D(i).name);
     S = read_Intan_RHD2000_file_modified(ffn,Verbosity="silent");
 
@@ -172,6 +220,9 @@ for i = 1:numel(D)
     end
 
     origFs = S.frequency_parameters.amplifier_sample_rate;
+    if i == 1
+        validateRates(options, has, origFs);   % fail fast, before reading everything
+    end
 
     % Set label
     labels = {S.amplifier_channels.(options.labelField)};
@@ -186,10 +237,9 @@ for i = 1:numel(D)
     end
 
     digData{i} = S.board_dig_in_data(1:ndid,:);
-    parfor_progress;
+    if isempty(progressFcn), parfor_progress; end
 end
-clear mua_
-parfor_progress(0);
+if isempty(progressFcn), parfor_progress(0); end
 
 
 fprintf('Processing signals ...')
@@ -197,22 +247,31 @@ fprintf('Processing signals ...')
 % filter signals ----------------------------------------------
 
 if has.LFP
-    if has.LFP
-        Y.LFP = resample(AMPSIG, options.LFP_Fs, origFs);
-    end
+    nDone = reportProgress(progressFcn, nDone, nSteps, ...
+        sprintf('LFP: resampling to %g Hz', options.LFP_Fs));
+    Y.LFP = resample(AMPSIG, options.LFP_Fs, origFs);
 end
 if has.MUA
-    Y.MUA = resample(AMPSIG, options.MUA_Fs, origFs);
-    Wn = options.MUA_bpLoHi./(options.MUA_Fs/2);
+    % Bandpass at origFs -> rectify -> resample to MUA_Fs -> moving-mean
+    % integration on the MUA_Fs grid (see help above).
+    nDone = reportProgress(progressFcn, nDone, nSteps, ...
+        sprintf('MUA: bandpass [%g %g] Hz, rectify, resample to %g Hz, integrate', ...
+        options.MUA_bpLoHi, options.MUA_Fs));
+    Wn = options.MUA_bpLoHi./(origFs/2);
     [b,a] = butter(4, Wn, 'bandpass');
-    Y.MUA = filtfilt(b,a,S.Y.MUA);
+    Y.MUA = abs(filtfilt(b,a,AMPSIG));
+    Y.MUA = resample(Y.MUA, options.MUA_Fs, origFs);
+    win = max(1, round(options.MUA_Fs/options.MUA_IntegrationHz));
+    Y.MUA = single(movmean(Y.MUA, win)); % integrate along time
 end
 
 if has.SPIKE
-    if isinf(options.SPIKE_Fs)
+    nDone = reportProgress(progressFcn, nDone, nSteps, ...
+        sprintf('SPIKE: bandpass [%g %g] Hz', options.SPIKE_bpLoHi));
+    if isinf(options.SPIKE_Fs) || options.SPIKE_Fs == origFs
         options.SPIKE_Fs = origFs;
         Y.SPIKE = AMPSIG;
-    elseif options.SPIKE_Fs < origFs
+    else
         Y.SPIKE = resample(AMPSIG, options.SPIKE_Fs, origFs);
     end
     Wn = options.SPIKE_bpLoHi./(options.SPIKE_Fs/2);
@@ -221,23 +280,18 @@ if has.SPIKE
 end
 clear AMPSIG
 
-% handle signals-----------------------------------------------
-
-if has.MUA
-    Y.MUA = abs(Y.MUA);
-    win = max(1, round(options.D.MUA_Fs/options.D.MUA_IntegrationHz));
-    Y.MUA = movmean(Y.MUA, win); % integrate along time
-end
-
-% Interpolate bad channels across channels (spatial) after concat + reorder
+% Interpolate bad channels across channels (spatial) after concat, before remap
 if ~isempty(options.badChannels)
-    if has.LFP && isscalar(options.badChannels ) && options.badChannels < 0
+    nDone = reportProgress(progressFcn, nDone, nSteps, ...
+        'Interpolating bad channels (fillmissing makima)');
+    if autoBad
         r = rms(Y.LFP,1);
         zr = abs(zscore(r));
         zrthr = abs(options.badChannels);
         ind = zr > zrthr;
         options.badChannels = find(ind);
-        fprintf('%d channels with zscore(rms) > %g removed, %s\n',sum(ind),zrthr,mat2str(options.badChannels))
+        fprintf('%d channels with abs(zscore(rms)) > %g flagged as bad and interpolated: %s\n', ...
+            sum(ind),zrthr,mat2str(options.badChannels))
     end
 
     badCh = options.badChannels;
@@ -264,9 +318,11 @@ end
 
 
 if ~isempty(options.channelRemap)
+    nDone = reportProgress(progressFcn, nDone, nSteps, 'Applying channel remap');
     if has.LFP, Y.LFP = Y.LFP(:,options.channelRemap); end
     if has.MUA, Y.MUA = Y.MUA(:,options.channelRemap); end
     if has.SPIKE, Y.SPIKE = Y.SPIKE(:,options.channelRemap); end
+    labels = labels(options.channelRemap);   % keep labels matched to Y columns
 end
 
 
@@ -274,9 +330,15 @@ end
 
 
 % handle digital lines -----------------------------------
-ccn = {S.board_dig_in_channels.(options.labelField)};
-ccn = ccn(1:ndid);
-ccn = matlab.lang.makeValidName(ccn);
+nDone = reportProgress(progressFcn, nDone, nSteps, 'Extracting digital events');
+events = struct();
+if ndid > 0
+    ccn = {S.board_dig_in_channels.(options.labelField)};
+    ccn = ccn(1:ndid);
+    ccn = matlab.lang.makeValidName(ccn);
+else
+    ccn = {};   % no digital input lines recorded
+end
 
 digData = cat(2,digData{:}).';
 
@@ -321,4 +383,37 @@ end
 
 info.importOptions = options;
 
+reportProgress(progressFcn, nDone, nSteps, 'Done');   % nDone == nSteps here
 fprintf(' done\n')
+end
+
+
+function nDone = reportProgress(fcn, nDone, nTotal, msg)
+%reportProgress  Invoke the optional ProgressFcn and advance the step count.
+%   Called before each step with the steps completed so far; returns the
+%   count including the step now starting.
+if ~isempty(fcn)
+    fcn(nDone, nTotal, msg);
+end
+nDone = nDone + 1;
+end
+
+
+function validateRates(options, has, origFs)
+%validateRates  Check band edges against the Nyquist rate of the data they
+%   are applied to, once the amplifier sample rate is known.
+if has.MUA && options.MUA_bpLoHi(2) >= origFs/2
+    error('INTAN2MATLAB:MUA_bpNyquist', ...
+        'MUA_bpLoHi high edge (%g Hz) must be below origFs/2 (%g Hz).', ...
+        options.MUA_bpLoHi(2), origFs/2);
+end
+if has.SPIKE
+    spikeFs = options.SPIKE_Fs;
+    if isinf(spikeFs), spikeFs = origFs; end
+    if options.SPIKE_bpLoHi(2) >= spikeFs/2
+        error('INTAN2MATLAB:SPIKE_bpNyquist', ...
+            'SPIKE_bpLoHi high edge (%g Hz) must be below SPIKE_Fs/2 (%g Hz).', ...
+            options.SPIKE_bpLoHi(2), spikeFs/2);
+    end
+end
+end
