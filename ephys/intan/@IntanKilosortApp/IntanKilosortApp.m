@@ -23,10 +23,12 @@ classdef IntanKilosortApp < handle
     %     5. Kilosort   Expose Kilosort4 / .bin configuration, save & reload it,
     %                   and batch-process selected datasets (.bin then KS4) with
     %                   per-dataset progress.
-    %     6. Convert    Run INTAN2MATLAB (LFP / MUA / SPIKE + digital events) on
-    %                   the selected datasets with every option exposed, and
-    %                   save one .mat per dataset (default: next to the raw
-    %                   data), with in-tab progress, status and a Cancel button.
+    %     6. Convert    Derive LFP / MUA / SPIKE + digital events for the
+    %                   selected datasets via IntanDataset.toMat (the
+    %                   intan2matlab processing, any recording layout) with
+    %                   every option exposed, and save one .mat per dataset
+    %                   (default: next to the raw data), with in-tab progress,
+    %                   status and a Cancel button.
     %
     %   User preferences (paths, config, and the figure position/size) persist
     %   across sessions via getpref/setpref under the 'IntanKilosortApp' group.
@@ -172,7 +174,7 @@ classdef IntanKilosortApp < handle
         ReviewAmpAxes       matlab.ui.control.UIAxes
         ReviewRateAxes      matlab.ui.control.UIAxes
 
-        % --- Convert tab (intan2matlab; see buildConvertTab / onRunConvert) ---
+        % --- Convert tab (IntanDataset.toMat; see buildConvertTab / onRunConvert) ---
         ConvOutputDirField      matlab.ui.control.EditField
         ConvBrowseOutputButton  matlab.ui.control.Button
         ConvSuffixField         matlab.ui.control.EditField
@@ -182,6 +184,13 @@ classdef IntanKilosortApp < handle
         ConvMUACheckBox         matlab.ui.control.CheckBox
         ConvSPIKECheckBox       matlab.ui.control.CheckBox
         ConvLFPFsField          matlab.ui.control.NumericEditField
+        ConvLFPHighpassCheckBox matlab.ui.control.CheckBox
+        ConvLFPHighpassField    matlab.ui.control.NumericEditField
+        ConvLFPLowpassCheckBox  matlab.ui.control.CheckBox
+        ConvLFPLowpassField     matlab.ui.control.NumericEditField
+        ConvLFPNotchCheckBox    matlab.ui.control.CheckBox
+        ConvLFPNotchField       matlab.ui.control.EditField
+        ConvLFPNotchBWField     matlab.ui.control.NumericEditField
         ConvMUAFsField          matlab.ui.control.NumericEditField
         ConvMUAIntegrationField matlab.ui.control.NumericEditField
         ConvMUALoField          matlab.ui.control.NumericEditField
@@ -274,10 +283,10 @@ classdef IntanKilosortApp < handle
         ReviewData = struct([])
         ReviewSelectedUnit (1,1) double = 0   % row index into ReviewData unit list (0 = all)
 
-        % --- Convert (intan2matlab) run state ---
+        % --- Convert (IntanDataset.toMat) run state ---
         % ConvRunning guards against re-entry and freezes the targets table;
         % ConvCancelRequested is set by the Cancel button and checked by the
-        % intan2matlab ProgressFcn at each step boundary (see onRunConvert).
+        % toMat/deriveSignals ProgressFcn at each step boundary (see onRunConvert).
         ConvRunning (1,1) logical = false
         ConvCancelRequested (1,1) logical = false
     end
@@ -527,22 +536,32 @@ classdef IntanKilosortApp < handle
             obj.renderReviewPlots();
         end
 
-        %% --- Convert tab (intan2matlab) ----------------------------------
+        %% --- Convert tab (IntanDataset.toMat / deriveSignals) ------------
         function cfg = defaultConvertConfig(~)
-            % Convert-tab defaults. The intan2matlab options mirror that
-            % function's own defaults (dataTypeOut "LFP", LFP_Fs 1000, MUA_Fs
-            % 2000, MUA_IntegrationHz 1000, band edges [300 5000], SPIKE_Fs
-            % Inf, labelField custom_channel_name, no channel selection /
-            % bad channels / remap). OutputDir "" = each dataset's folder.
+            % Convert-tab defaults. The signal options mirror the defaults
+            % of IntanDataset.deriveSignals (= intan2matlab): dataTypeOut
+            % "LFP", LFP_Fs 1000, no LFP filtering (LFP_bpLoHi [0 Inf], no
+            % notch), MUA_Fs 2000, MUA_IntegrationHz 1000, band edges
+            % [300 5000], SPIKE_Fs Inf, labelField custom_channel_name, no
+            % channel selection / bad channels / remap. The LFP cut-off /
+            % notch values below are only used once their box is ticked.
+            % OutputDir "" = each dataset's folder.
             cfg = struct( ...
                 'OutputDir',          "", ...
-                'Suffix',             "_intan2matlab", ...
+                'Suffix',             "_extract", ...
                 'MatVersion',         "-v7.3", ...
                 'Overwrite',          false, ...
                 'LFP',                true, ...
                 'MUA',                false, ...
                 'SPIKE',              false, ...
                 'LFP_Fs',             1000, ...
+                'LFP_HighpassOn',     false, ...
+                'LFP_HighpassHz',     1, ...
+                'LFP_LowpassOn',      false, ...
+                'LFP_LowpassHz',      300, ...
+                'LFP_NotchOn',        false, ...
+                'LFP_NotchHz',        "60", ...    % list text, e.g. "60, 120, 180"
+                'LFP_NotchBW',        2, ...
                 'MUA_Fs',             2000, ...
                 'MUA_IntegrationHz',  1000, ...
                 'MUA_bpLoHi',         [300 5000], ...
@@ -565,6 +584,12 @@ classdef IntanKilosortApp < handle
             mua = obj.ConvMUACheckBox.Value;
             spk = obj.ConvSPIKECheckBox.Value;
             obj.ConvLFPFsField.Enable = onOff(lfp);
+            set([obj.ConvLFPHighpassCheckBox, obj.ConvLFPLowpassCheckBox, ...
+                obj.ConvLFPNotchCheckBox], 'Enable', onOff(lfp));
+            obj.ConvLFPHighpassField.Enable = onOff(lfp && obj.ConvLFPHighpassCheckBox.Value);
+            obj.ConvLFPLowpassField.Enable  = onOff(lfp && obj.ConvLFPLowpassCheckBox.Value);
+            set([obj.ConvLFPNotchField, obj.ConvLFPNotchBWField], ...
+                'Enable', onOff(lfp && obj.ConvLFPNotchCheckBox.Value));
             set([obj.ConvMUAFsField, obj.ConvMUAIntegrationField, ...
                 obj.ConvMUALoField, obj.ConvMUAHiField], 'Enable', onOff(mua));
             obj.ConvSpikeOrigCheckBox.Enable = onOff(spk);
@@ -589,11 +614,11 @@ classdef IntanKilosortApp < handle
         end
 
         function onBrowseConvertOutput(obj)
-            % Prompt for the folder that receives the intan2matlab .mat files.
+            % Prompt for the folder that receives the derived-signal .mat files.
             start = obj.ConvOutputDirField.Value;
             if isempty(start) || ~isfolder(start); start = obj.RootPathField.Value; end
             if isempty(start) || ~isfolder(start); start = pwd; end
-            d = uigetdir(start, "Select output folder for intan2matlab .mat files");
+            d = uigetdir(start, "Select output folder for the converted .mat files");
             figure(obj.Fig);
             if isequal(d, 0); return; end
             obj.ConvOutputDirField.Value = d;
@@ -624,8 +649,8 @@ classdef IntanKilosortApp < handle
                     outDir = outRoot;
                 end
                 f = string(fullfile(outDir, d.Name + string(cfg.Suffix) + ".mat"));
-                if d.RecordingFormat ~= "traditional"
-                    st = "will skip: " + d.RecordingFormat + " layout";
+                if d.RecordingFormat == "unknown"
+                    st = "will skip: no Intan files";
                 elseif isfile(f) && cfg.Overwrite
                     st = "exists: will overwrite";
                 elseif isfile(f)
@@ -751,7 +776,7 @@ classdef IntanKilosortApp < handle
                 case obj.TabReview
                     msg = "Review: load a results folder to inspect sorted units.";
                 case obj.TabConvert
-                    msg = "Convert: run intan2matlab (LFP / MUA / SPIKE) on the ticked datasets and save .mat files.";
+                    msg = "Convert: derive LFP / MUA / SPIKE for the ticked datasets and save .mat files.";
                     obj.refreshConvertTargets();
                 otherwise
                     msg = "Ready.";

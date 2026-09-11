@@ -758,45 +758,64 @@ fig("p5", p5, "Depth by atlas plate",
            "panels differing in overall brightness is the treatment effect."),
     w = 10, h = 4.5)
 
-# 5f. The same individual-section traces as Figure 2, but organized by atlas
-#     plate (anterior to posterior, left to right) instead of hemisphere, and
-#     split into one figure per treatment arm rather than facet columns -- four
-#     panels of Treatment x Hemisphere x AtlasPlate would be too dense to read
-#     as one image. Depth and intensity axes and the subject color scale are
-#     fixed identically across all four figures, so a plate or a subject can be
-#     compared directly across treatments as well as within one.
+# 5f. The same individual-section traces as p2, but organized by atlas
+#     plate (anterior to posterior, left to right) instead of hemisphere. The
+#     four arms go into two figures of two rows each: the within-animal pair
+#     (Vehicle over GM6001) and the two control hemispheres. Depth and
+#     intensity axes and the subject color scale are fixed identically across
+#     both figures, so a plate or a subject can be compared directly across
+#     rows and across figures.
 subj_levels <- levels(prof$SubjectID)
 y_rng <- range(binned$intensity, na.rm = TRUE)
 plate_labeller <- as_labeller(\(x) paste("Plate", x))
 
-for (tx in levels(binned$Treatment)) {
-  dat <- binned |> filter(Treatment == tx)
+tx_pairs <- list(
+  VehicleGM6001 = list(tx = c("Vehicle", "GM6001"),
+                       who = "trained animals, Vehicle and GM6001 hemispheres",
+                       note = paste0("Each trained animal contributes one ",
+                                     "hemisphere to each row, so a color ",
+                                     "that appears in both rows is the same ",
+                                     "animal's two hemispheres.")),
+  Control       = list(tx = c("Control L", "Control R"),
+                       who = "control animals, left and right hemispheres",
+                       note = paste0("Neither hemisphere was infused, so any ",
+                                     "row-to-row difference here is a ",
+                                     "hemisphere difference, not a ",
+                                     "treatment one.")))
+
+for (nm in names(tx_pairs)) {
+  pr  <- tx_pairs[[nm]]
+  dat <- binned |> filter(Treatment %in% pr$tx)
   if (!nrow(dat)) next
 
   p5c <- ggplot(dat, aes(depth_bin, intensity, group = section_id,
                          color = SubjectID)) +
     geom_line(alpha = 0.75, linewidth = 0.5) +
-    facet_wrap(~ AtlasPlate, nrow = 1, labeller = plate_labeller) +
+    facet_grid(Treatment ~ AtlasPlate,
+               labeller = labeller(AtlasPlate = plate_labeller)) +
+    # limits pins each subject's color across both figures; breaks keeps the
+    # legend to the subjects actually drawn here.
     scale_color_viridis_d(option = "turbo", limits = subj_levels,
+                          breaks = levels(droplevels(dat$SubjectID)),
                           guide = guide_legend(ncol = 1)) +
     coord_cartesian(ylim = y_rng) +
-    labs(title = sprintf("WFA-PV intensity by depth and atlas plate -- %s", tx),
+    labs(title = sprintf("WFA-PV intensity by depth and atlas plate -- %s",
+                         paste(pr$tx, collapse = " and ")),
          subtitle = "One line per section, colored by subject",
          x = "Depth below pial surface (um)", y = "Intensity (a.u.)",
          color = "Subject") +
     theme(legend.key.height = unit(9, "pt"))
 
-  slug <- gsub("[^A-Za-z0-9]+", "", tx)
-  fig(paste0("p5c_", slug), p5c,
-      sprintf("Depth by atlas plate, %s only", tx),
-      paste0("Every ", tx, " section, one line per section colored by ",
-             "subject, faceted left-to-right by atlas plate. Depth, ",
-             "intensity and the subject color scale are fixed across all ",
-             "four treatment figures, so a plate or a subject can be ",
-             "compared directly across this set as well as within it. A ",
-             "subject missing from the legend simply has no section in this ",
-             "arm."),
-      w = 12, h = 4.5)
+  fig(paste0("p5c_", nm), p5c,
+      sprintf("Depth by atlas plate, %s", paste(pr$tx, collapse = " vs ")),
+      paste0("Every section from the ", pr$who, ", one row per arm and one ",
+             "column per atlas plate (anterior to posterior, left to right), ",
+             "one line per section colored by subject. ", pr$note, " Depth, ",
+             "intensity and the subject color scale are the same in both ",
+             "paired figures. An empty panel means that arm has no section ",
+             "at that plate; a subject missing from the legend has no ",
+             "section in either row."),
+      w = 12, h = 7)
 }
 
 cat("\nFigures written to ", FIG_DIR, "\n", sep = "")

@@ -41,6 +41,6 @@ setpref(g, 'ExecBlocking', logical(obj.ExecModeDropDown.Value));
 % --- kilosort config ---
 setpref(g, 'KilosortConfig', obj.gatherKilosortConfig());
 
-% --- intan2matlab (Convert tab) options ---
+% --- Convert tab (IntanDataset.toMat) options ---
 setpref(g, 'ConvertConfig', obj.gatherConvertConfig());
 end

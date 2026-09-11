@@ -23,6 +23,7 @@ function hdr = parseIntanHeader(ffn)
 %     channelNames            1xN string (custom_channel_name, amplifier)
 %     nativeNames             1xN string (native_channel_name, amplifier)
 %     digInNames              1xN string (custom_channel_name, dig-in)
+%     digInNativeNames        1xN string (native_channel_name, dig-in)
 %     digInNativeOrders       1xN double (native_order / bit position, dig-in)
 %     bytesPerBlock           bytes per data block
 %     numSamplesPerDataBlock  amplifier samples per data block (60 or 128)
@@ -109,6 +110,7 @@ end
 amplifier_names = strings(1,0);
 amplifier_native = strings(1,0);
 dig_in_names = strings(1,0);
+dig_in_native = strings(1,0);
 dig_in_orders = [];   % native_order (bit position) of each enabled dig-in line
 
 num_amplifier_channels      = 0;
@@ -158,6 +160,7 @@ for signal_group = 1:number_of_signal_groups
                     case 4
                         num_board_dig_in_channels = num_board_dig_in_channels + 1;
                         dig_in_names(end+1) = string(custom_name); %#ok<AGROW>
+                        dig_in_native(end+1) = string(native_name); %#ok<AGROW>
                         dig_in_orders(end+1) = native_order; %#ok<AGROW>
                     case 5
                         num_board_dig_out_channels = num_board_dig_out_channels + 1;
@@ -211,6 +214,7 @@ hdr = struct( ...
     'channelNames',             amplifier_names, ...
     'nativeNames',              amplifier_native, ...
     'digInNames',               dig_in_names, ...
+    'digInNativeNames',         dig_in_native, ...
     'digInNativeOrders',        dig_in_orders, ...
     'bytesPerBlock',            bytes_per_block, ...
     'numSamplesPerDataBlock',   num_samples_per_data_block, ...

@@ -32,8 +32,14 @@ classdef IntanDataset < handle
     %     ds.PythonExe = "C:\miniconda3\python.exe";
     %     res = ds.runKilosort();          % write run_ks4.py + settings.json, spawn
     %
+    %   Derived signals (the intan2matlab conversion, any layout)
+    %   ---------------------------------------------------------
+    %     [Y, ev, info] = ds.deriveSignals(dataTypeOut=["LFP" "MUA"]);
+    %     out = ds.toMat(File="D:\out\subj1.mat", ...
+    %                    SignalOptions=struct('dataTypeOut', "LFP"));
+    %
     %   See also INTANKILOSORTPROJECT, READ_INTAN_RHD2000_FILE_MODIFIED,
-    %   MATRIX2KILOSORT, EXTRACT_TRIALS.
+    %   MATRIX2KILOSORT, EXTRACT_TRIALS, INTAN2MATLAB.
 
     properties
         Folder   (1,1) string = ""      % directory containing the *.rhd files
@@ -146,6 +152,8 @@ classdef IntanDataset < handle
         result = runKilosort(obj, opts)
         result = runSpikeInterface(obj, opts)
         iv     = artifactIntervals(obj, opts)
+        [Y, ev, info] = deriveSignals(obj, opts)   % "events" is reserved in classdef
+        out    = toMat(obj, opts)
 
         function obj = IntanDataset(folder, opts)
             %IntanDataset  Construct from a folder of *.rhd files.

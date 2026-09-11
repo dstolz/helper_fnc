@@ -28,7 +28,7 @@ buildStatusBar(obj, outer);
 
 % Tab order (left to right): Datasets, Probe, Artifacts, Visualize, Kilosort,
 % Review, Convert. Probe sits next to Datasets; Visualize sits to the right of
-% Artifacts; Convert (intan2matlab .mat export) is independent of the KS4 path.
+% Artifacts; Convert (IntanDataset.toMat .mat export) is independent of the KS4 path.
 obj.TabDatasets  = uitab(obj.Tabs, "Title", "Datasets");
 obj.TabProbe     = uitab(obj.Tabs, "Title", "Probe");
 obj.TabArtifacts = uitab(obj.Tabs, "Title", "Artifacts");

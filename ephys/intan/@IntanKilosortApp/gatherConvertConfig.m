@@ -20,6 +20,14 @@ cfg.MUA   = logical(obj.ConvMUACheckBox.Value);
 cfg.SPIKE = logical(obj.ConvSPIKECheckBox.Value);
 
 cfg.LFP_Fs            = obj.ConvLFPFsField.Value;
+cfg.LFP_HighpassOn    = logical(obj.ConvLFPHighpassCheckBox.Value);
+cfg.LFP_HighpassHz    = obj.ConvLFPHighpassField.Value;
+cfg.LFP_LowpassOn     = logical(obj.ConvLFPLowpassCheckBox.Value);
+cfg.LFP_LowpassHz     = obj.ConvLFPLowpassField.Value;
+cfg.LFP_NotchOn       = logical(obj.ConvLFPNotchCheckBox.Value);
+cfg.LFP_NotchHz       = string(obj.ConvLFPNotchField.Value);
+cfg.LFP_NotchBW       = obj.ConvLFPNotchBWField.Value;
+
 cfg.MUA_Fs            = obj.ConvMUAFsField.Value;
 cfg.MUA_IntegrationHz = obj.ConvMUAIntegrationField.Value;
 cfg.MUA_bpLoHi        = [obj.ConvMUALoField.Value, obj.ConvMUAHiField.Value];

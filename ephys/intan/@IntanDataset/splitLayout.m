@@ -28,7 +28,8 @@ function L = splitLayout(obj)
 %     nSamp        amplifier samples (from .dat size)
 %     boardMode    board mode (ADC scaling, from header)
 %     ampCustom / ampNative   1xnChan amplifier names (header order = file order)
-%     digInNames / digInOrders  dig-in custom names and native_order bit positions
+%     digInNames / digInNative / digInOrders  dig-in custom names, native names
+%                  and native_order bit positions
 %     numADC / numAux           board ADC / aux input channel counts
 %     ampFile      amplifier.dat path (one-file-per-signal) or ""
 %     ampFiles     1xnChan per-channel paths (one-file-per-channel) or empty
@@ -74,6 +75,7 @@ L.boardMode   = hdr.boardMode;
 L.ampCustom   = hdr.channelNames;
 L.ampNative   = hdr.nativeNames;
 L.digInNames  = hdr.digInNames;
+L.digInNative = hdr.digInNativeNames;
 L.digInOrders = hdr.digInNativeOrders;
 L.numADC      = hdr.numBoardADCChannels;
 L.numAux      = hdr.numAuxInputChannels;

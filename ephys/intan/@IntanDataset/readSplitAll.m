@@ -26,6 +26,9 @@ arguments
     opts.IncludeAux (1,1) logical = false
     opts.Concatenate (1,1) logical = true
     opts.ProgressFcn = []
+    opts.Precision (1,1) string {mustBeMember(opts.Precision, ["double", "single"])} = "double"
+    opts.EventLabelField (1,1) string {mustBeMember(opts.EventLabelField, ...
+        ["custom_channel_name", "native_channel_name"])} = "custom_channel_name"
 end
 
 if isnan(obj.Fs) || isempty(obj.PerFile)
@@ -40,6 +43,9 @@ end
 
 % --- Amplifier (whole recording; readData concatenates everything anyway) -----
 X = obj.readSplitWindow(0, L.nSamp);   % [nSamp x nChan], microvolts
+if opts.Precision == "single"
+    X = single(X);
+end
 keep = opts.KeepChannels;
 if ~isempty(keep)
     if max(keep) > size(X, 2)
@@ -57,7 +63,8 @@ end
 nSamp = size(X, 1);
 
 % --- Digital-input events -----------------------------------------------------
-[events, digInNames, digData] = readSplitDigital(L, nSamp, Fs);
+[events, digInNames, digInNative, digData] = readSplitDigital(L, nSamp, Fs, ...
+    opts.EventLabelField);
 
 % --- Optional board ADC / aux (one-file-per-signal only) ----------------------
 boardADC = [];
@@ -93,6 +100,7 @@ else
 end
 data.events           = events;
 data.digInNames       = digInNames;
+data.digInNativeNames = digInNative;
 data.boardADC         = boardADC;
 data.aux              = aux;
 data.auxFs            = auxFs;
@@ -104,12 +112,14 @@ end
 
 
 % =========================================================================
-function [events, digInNames, digData] = readSplitDigital(L, nSamp, Fs)
+function [events, digInNames, digInNative, digData] = readSplitDigital(L, nSamp, Fs, labelField)
 %readSplitDigital  Decode dig-in lines into per-line [nSamp x nLine] + events.
-events     = struct();
-digInNames = L.digInNames;
-nLine      = numel(digInNames);
-digData    = zeros(nSamp, max(nLine, 0));
+%   Events are keyed by the custom or native dig-in names (LABELFIELD).
+events      = struct();
+digInNames  = L.digInNames;
+digInNative = L.digInNative;
+nLine       = numel(digInNames);
+digData     = zeros(nSamp, max(nLine, 0));
 
 if nLine == 0
     return
@@ -118,8 +128,9 @@ end
 switch L.format
     case "one-file-per-signal"
         if L.digInFile == "" || ~isfile(L.digInFile)
-            digInNames = string.empty(1,0);
-            digData    = zeros(nSamp, 0);
+            digInNames  = string.empty(1,0);
+            digInNative = string.empty(1,0);
+            digData     = zeros(nSamp, 0);
             return
         end
         raw = readDatVector(L.digInFile, nSamp, 'uint16');   % [n x 1] packed bits
@@ -130,8 +141,9 @@ switch L.format
 
     case "one-file-per-channel"
         if isempty(L.digInFiles) || ~all(arrayfun(@(f) isfile(f), L.digInFiles))
-            digInNames = string.empty(1,0);
-            digData    = zeros(nSamp, 0);
+            digInNames  = string.empty(1,0);
+            digInNative = string.empty(1,0);
+            digData     = zeros(nSamp, 0);
             return
         end
         for j = 1:nLine
@@ -140,7 +152,11 @@ switch L.format
         end
 end
 
-names = matlab.lang.makeValidName(cellstr(digInNames));
+if labelField == "native_channel_name"
+    names = matlab.lang.makeValidName(cellstr(digInNative));
+else
+    names = matlab.lang.makeValidName(cellstr(digInNames));
+end
 for j = 1:numel(names)
     events.(names{j}) = highSegments(digData(:, j), Fs);
 end

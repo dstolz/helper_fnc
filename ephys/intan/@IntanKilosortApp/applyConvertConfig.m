@@ -29,6 +29,13 @@ trySet(obj.ConvMUACheckBox,   'Value', logical(cfg.MUA));
 trySet(obj.ConvSPIKECheckBox, 'Value', logical(cfg.SPIKE));
 
 trySet(obj.ConvLFPFsField,          'Value', cfg.LFP_Fs);
+trySet(obj.ConvLFPHighpassCheckBox, 'Value', logical(cfg.LFP_HighpassOn));
+trySet(obj.ConvLFPHighpassField,    'Value', cfg.LFP_HighpassHz);
+trySet(obj.ConvLFPLowpassCheckBox,  'Value', logical(cfg.LFP_LowpassOn));
+trySet(obj.ConvLFPLowpassField,     'Value', cfg.LFP_LowpassHz);
+trySet(obj.ConvLFPNotchCheckBox,    'Value', logical(cfg.LFP_NotchOn));
+trySet(obj.ConvLFPNotchField,       'Value', char(string(cfg.LFP_NotchHz)));
+trySet(obj.ConvLFPNotchBWField,     'Value', cfg.LFP_NotchBW);
 trySet(obj.ConvMUAFsField,          'Value', cfg.MUA_Fs);
 trySet(obj.ConvMUAIntegrationField, 'Value', cfg.MUA_IntegrationHz);
 if isnumeric(cfg.MUA_bpLoHi) && numel(cfg.MUA_bpLoHi) == 2

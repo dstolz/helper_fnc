@@ -18,15 +18,21 @@ function data = readData(obj, opts)
 %     ProgressFcn  function handle  called before each file as
 %                  ProgressFcn(i, nFiles, fileName) for progress reporting
 %                  (default: none)
+%     Precision    "double" (default) | "single"  class of the amplifier
+%                  matrix. "single" casts each file as it is read, so peak
+%                  memory is ~half that of "double" (values are the same
+%                  microvolts, rounded to single precision).
+%     EventLabelField  "custom_channel_name" (default) | "native_channel_name"
+%                  which dig-in channel name keys the EVENTS struct.
 %
 %   Output struct fields
 %   --------------------
-%     amplifier      [nSamples x nChan] double, microvolts
+%     amplifier      [nSamples x nChan] double (or single), microvolts
 %     Fs             amplifier sample rate (Hz)
 %     t              [nSamples x 1] time vector (s)
 %     channelNames / nativeNames / channelOrder
 %     events         struct, one field per dig-in line -> [k x 2] [t_on t_off] (s)
-%     digInNames
+%     digInNames / digInNativeNames   dig-in custom / native channel names
 %     boardADC / aux / auxFs   (or [] when not requested/present)
 %     files          string array of files read (chronological)
 %     fileSampleCounts  per-file amplifier sample counts
@@ -48,6 +54,9 @@ arguments
     opts.IncludeAux (1,1) logical = false
     opts.Concatenate (1,1) logical = true
     opts.ProgressFcn = []
+    opts.Precision (1,1) string {mustBeMember(opts.Precision, ["double", "single"])} = "double"
+    opts.EventLabelField (1,1) string {mustBeMember(opts.EventLabelField, ...
+        ["custom_channel_name", "native_channel_name"])} = "custom_channel_name"
 end
 
 if obj.NumFiles == 0
@@ -63,7 +72,8 @@ if obj.RecordingFormat == "one-file-per-signal" || ...
         obj.RecordingFormat == "one-file-per-channel"
     data = obj.readSplitAll(Files=opts.Files, KeepChannels=opts.KeepChannels, ...
         IncludeADC=opts.IncludeADC, IncludeAux=opts.IncludeAux, ...
-        Concatenate=opts.Concatenate, ProgressFcn=opts.ProgressFcn);
+        Concatenate=opts.Concatenate, ProgressFcn=opts.ProgressFcn, ...
+        Precision=opts.Precision, EventLabelField=opts.EventLabelField);
     return
 end
 
@@ -84,6 +94,7 @@ fileSampleCounts = zeros(1, nFiles);
 channelNames = string.empty(1,0);
 nativeNames  = string.empty(1,0);
 digInNames   = string.empty(1,0);
+digInNative  = string.empty(1,0);
 Fs    = NaN;
 auxFs = NaN;
 ndid  = 0;  % dig-in line count fixed from first file (intan2matlab policy)
@@ -104,6 +115,9 @@ for i = 1:nFiles
     end
 
     X = S.amplifier_data.';  % [nSamples x nChan], microvolts
+    if opts.Precision == "single"
+        X = single(X);
+    end
 
     if ~isempty(opts.KeepChannels)
         if max(opts.KeepChannels) > size(X, 2)
@@ -130,6 +144,8 @@ for i = 1:nFiles
             ndid = size(S.board_dig_in_data, 1);
             digInNames = string({S.board_dig_in_channels.custom_channel_name});
             digInNames = digInNames(1:ndid);
+            digInNative = string({S.board_dig_in_channels.native_channel_name});
+            digInNative = digInNative(1:ndid);
         end
         if opts.IncludeAux && isfield(S, 'aux_input_data') && ~isempty(S.aux_input_data)
             auxFs = S.frequency_parameters.aux_input_sample_rate;
@@ -167,7 +183,11 @@ end
 % Build events from concatenated dig lines (seconds on Fs grid)
 events = struct();
 if opts.Concatenate && ndid > 0 && ~isempty(digData)
-    names = matlab.lang.makeValidName(cellstr(digInNames));
+    if opts.EventLabelField == "native_channel_name"
+        names = matlab.lang.makeValidName(cellstr(digInNative));
+    else
+        names = matlab.lang.makeValidName(cellstr(digInNames));
+    end
     for j = 1:ndid
         events.(names{j}) = highSegments(digData(:, j), Fs);
     end
@@ -189,6 +209,7 @@ data.nativeNames      = nativeNames;
 data.channelOrder     = resolveOrder(opts.KeepChannels, numel(channelNames));
 data.events           = events;
 data.digInNames       = digInNames;
+data.digInNativeNames = digInNative;
 data.boardADC         = boardADC;
 data.aux              = aux;
 data.auxFs            = auxFs;

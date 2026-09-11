@@ -75,7 +75,7 @@ if ispref(g, 'KilosortConfig')
     end
 end
 
-% --- intan2matlab (Convert tab) options ---
+% --- Convert tab (IntanDataset.toMat) options ---
 if ispref(g, 'ConvertConfig')
     cfg = getpref(g, 'ConvertConfig');
     if isstruct(cfg)
