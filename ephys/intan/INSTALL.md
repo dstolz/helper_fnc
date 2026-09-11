@@ -98,8 +98,8 @@ calls the environment's `python.exe` directly by full path
 env, so it needs its own environment. From Anaconda Prompt:
 
 ```bat
-conda create -n phy2 python=3.11 -y
-conda activate phy2
+conda create -n phy python=3.11 -y
+conda activate phy
 pip install phy --pre --upgrade
 ```
 
@@ -118,9 +118,10 @@ still runs and writes phy-format output either way.
      otherwise browse to it with the `...` button.
    - **Conda env** — leave blank (the Python exe above already points inside
      the `kilosort` env).
-   - **Phy command** — leave as `phy` if you installed it into the base/PATH
-     environment, or set it to `conda run -n phy2 phy` if you used the
-     separate `phy2` env from step 5.
+   - **Phy command** — leave blank to use the default, `conda run -n phy
+     phy` (the separate `phy` env from step 5, requires `conda` on PATH); set
+     it to `phy` instead if you installed it into the base/PATH environment,
+     or to `conda run -n <name> phy` if you named the env something else.
 
 ## 7. Verify everything works
 

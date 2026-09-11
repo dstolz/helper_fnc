@@ -57,8 +57,8 @@ obj.BrowseOutputButton.Layout.Row = r; obj.BrowseOutputButton.Layout.Column = 5;
 
 r = r + 1;
 l = lab(cg, "Phy command:", r);
-l.Tooltip = "Command used to launch phy (e.g. 'phy', 'conda run -n phy2 phy', or a full phy path).";
-obj.PhyCmdField = uieditfield(cg, "text", "Placeholder", "phy (or 'conda run -n phy2 phy')");
+l.Tooltip = "Command used to launch phy. Blank defaults to 'conda run -n phy phy' (phy's own conda env); override with a different env name or a full phy path.";
+obj.PhyCmdField = uieditfield(cg, "text", "Placeholder", "conda run -n phy phy (default)");
 obj.PhyCmdField.Layout.Row = r; obj.PhyCmdField.Layout.Column = [2 5];
 
 % --- Preprocessing (SpikeInterface) ---
