@@ -616,6 +616,12 @@ classdef ECMBrowser < handle
         % Write the numbers behind the plot to a delimited file.
         file = saveData(obj, filename, options)
 
+        % Put a written account of the view on the clipboard. Public
+        % because NEXTCOMMANDS offers it beside SAVEDATA and VIEWDATA as
+        % something to do with a view once it is back, and an offer that
+        % errors when it is taken up is worse than no offer.
+        copySummary(obj)
+
         % Draw one group in a color and line style of your own.
         setGroupStyle(obj, field, level, opts)
 
@@ -834,11 +840,11 @@ classdef ECMBrowser < handle
                             string(obj.MetricDropDown.Value);
                     end
 
-                case "split"
-
                     if string(obj.GroupDropDown.Value) ~= obj.NoField
                         parts(end+1) = "color " + string(obj.GroupDropDown.Value);
                     end
+
+                case "split"
 
                     tiled = string(obj.TileListBox.Value);
                     tiled = tiled(tiled ~= obj.NoField);
@@ -1546,6 +1552,30 @@ classdef ECMBrowser < handle
 
         end
 
+        function fields = matchFields(obj)
+            %MATCHFIELDS Every field a comparison has to agree on.
+            % Pair within says what the reader asked to match on. What is
+            % drawn asks for more: a comparison taken across two atlas plates
+            % has no plate to be tiled at, and one taken across two subjects
+            % no color to be drawn in -- there is no value of the field for
+            % it to be placed at, only the several it was averaged over. So
+            % the fields the plot is split on are matched on as well, and the
+            % comparisons that exist are the ones the plot can place, rather
+            % than a tile or a curve standing for a mixture.
+            %
+            % The compared field is left out however it was arrived at, for
+            % the reason PAIRFIELDS drops it: matching on it would put the
+            % two sides of every comparison in different matches.
+
+            fields = [obj.pairFields(), obj.tileFields(), ...
+                string(obj.GroupDropDown.Value)];
+
+            fields = fields(fields ~= obj.NoField);
+            fields = fields(fields ~= string(obj.CompareFieldDropDown.Value));
+            fields = reshape(obj.FilterFields(ismember(obj.FilterFields, fields)), 1, []);
+
+        end
+
         % The columns to draw, and what each of them holds.
         [idx, Y] = rosterOf(obj, depth, Y, rows)
 
@@ -1926,6 +1956,32 @@ classdef ECMBrowser < handle
                 note = note + sprintf(" | %d comparison(s) undefined throughout", ...
                     obj.View.Undefined);
             end
+
+        end
+
+        function note = matchNote(obj)
+            %MATCHNOTE Say what a comparison was matched on beyond what was asked.
+            % MATCHFIELDS adds whatever the plot is split on to the fields
+            % Pair within names, and that changes how many comparisons there
+            % are -- pairing that was taken over a whole plate is taken per
+            % subject once the curves are colored by subject. A count that
+            % moves when Color by is touched is not something to work out
+            % from the count alone, so what was added is named.
+
+            note = "";
+
+            if obj.View.Comparison == ""
+                return
+            end
+
+            added = setdiff(obj.matchFields(), obj.pairFields(), "stable");
+
+            if isempty(added)
+                return
+            end
+
+            note = " | also matched on " + strjoin(added, ", ") + ...
+                ", so that no comparison spans a tile or a color";
 
         end
 
@@ -2417,9 +2473,6 @@ classdef ECMBrowser < handle
                 "Sent to the workspace", Icon = "success");
 
         end
-
-        % Put a written account of the view on the clipboard.
-        copySummary(obj)
 
         function onCopyCommands(obj)
             %ONCOPYCOMMANDS Put the commands for this view on the clipboard.

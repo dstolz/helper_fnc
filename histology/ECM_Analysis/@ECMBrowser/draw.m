@@ -25,6 +25,17 @@ function draw(obj, parent)
             nothing = "Nothing to compare: no match holds " + ...
                 obj.CompareFieldDropDown.Value + " " + ...
                 obj.CompareRefDropDown.Value + " alongside another value.";
+
+            % Named in full rather than as "the Pair within fields",
+            % because the match is not only what Pair within names: a
+            % field the plot is tiled by or colored by joins it, so the
+            % control to loosen may be one the reader was not looking at.
+            matched = obj.matchFields();
+
+            if ~isempty(matched)
+                nothing = nothing + " Sections are matched on " + ...
+                    strjoin(matched, ", ") + ".";
+            end
         end
 
         obj.setStatus(nothing);
@@ -211,8 +222,9 @@ function draw(obj, parent)
     obj.alignLabels(yLabels, 1)
     obj.alignLabels(xLabels, 2)
 
-    obj.setStatus(sprintf("%s | %s | %d group(s)%s%s%s", ...
+    obj.setStatus(sprintf("%s | %s | %d group(s)%s%s%s%s", ...
         obj.countNote(numel(idx)), tile_note(numel(tiles), nWanted), ...
-        numel(groups), obj.normNote(), obj.compareNote(), obj.skippedNote()));
+        numel(groups), obj.matchNote(), ...
+        obj.normNote(), obj.compareNote(), obj.skippedNote()));
 
 end

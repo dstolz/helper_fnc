@@ -22,7 +22,12 @@ function copySummary(obj)
         lines(end) = lines(end) + " by " + s.CompareField + ...
             ", against " + s.CompareRef;
 
-        paired = s.PairWithin(s.PairWithin ~= obj.NoField);
+        % What the comparison was actually taken within, which is more
+        % than Pair within names: MATCHFIELDS adds whatever the plot is
+        % split on, so that no comparison spans a tile or a color. A
+        % caption has to carry the pairing the numbers were taken under
+        % rather than the one that was typed into the control.
+        paired = obj.matchFields();
 
         if isempty(paired)
             lines(end) = lines(end) + ", pooled over every section in view";

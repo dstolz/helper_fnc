@@ -1,6 +1,7 @@
 function [idx, D] = compareWithin(obj, depth, Y, rows)
     %COMPAREWITHIN Measure one value of a field against another, in matches.
-    % Sections are put into matches on the Pair within fields, and
+    % Sections are put into matches on the MATCHFIELDS fields -- what
+    % Pair within names, and whatever else the plot is split on -- and
     % what is measured against what inside a match is PAIRSINMATCH's
     % question. What is settled here is the same for all three of its
     % answers: each side is averaged before the two are compared,
@@ -18,7 +19,7 @@ function [idx, D] = compareWithin(obj, depth, Y, rows)
 
     op = string(obj.CompareDropDown.Value);
     field = string(obj.CompareFieldDropDown.Value);
-    within = obj.pairFields();
+    within = obj.matchFields();
 
     levels = obj.levelsOf(field);
     reference = string(obj.CompareRefDropDown.Value);
