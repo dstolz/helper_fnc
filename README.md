@@ -67,7 +67,6 @@ Run the `.jsx` automation scripts from Photoshop's Scripts workflow.
 | [file_handling/](file_handling/) | Small file and remote-data import utilities. |
 | [function_helpers/](function_helpers/) | Tiny general-purpose MATLAB helper functions. |
 | [gui/](gui/) | Figure helpers, plot labeling helpers, raster plotting, and colormaps. |
-| [histology/](histology/) | Histology image processing, interactive alignment tools, cortex straightening, and labeling GUIs. |
 | [plotting/](plotting/) | Plotting utilities that do not fit the generic GUI folder. |
 | [slicer/](slicer/) | 3D Slicer Python scripts for cannula creation, coordinate measurements, and slice capture. |
 | [fiji_scripts/](fiji_scripts/) | Fiji/ImageJ macros for projection, ROI, segmentation, and image export workflows. |
@@ -154,34 +153,16 @@ Run the `.jsx` automation scripts from Photoshop's Scripts workflow.
 
 ## Histology Tools
 
-The [histology/](histology/) folder is the most specialized part of the repository. It contains both reusable image-processing functions and interactive tools for image registration, thresholding, and crop review.
+All histology functions now live in their own repository, [histology_analysis](https://github.com/dstolz/histology_analysis): the image-processing functions and interactive alignment/thresholding/labeling tools that used to sit under `histology/` here, plus the ECM staining analysis app (`ECM_Analysis/`).
 
-The section browser and the values-CSV ingest helpers now live in their own repository, [histology_browser](https://github.com/dstolz/histology_browser): `HistologyImageBrowser`, `launch_histology_browser`, `combine_values_csv`, `build_histology_image_catalog`, `parse_histology_filename`, `read_imagej_roi`, `write_imagej_roi`, `write_values_csv`, `imagej_pixel_size`, and `measure_line_profile`.
+The section browser and the values-CSV ingest helpers were split out earlier into a separate repository, [histology_browser](https://github.com/dstolz/histology_browser): `HistologyImageBrowser`, `launch_histology_browser`, `combine_values_csv`, `build_histology_image_catalog`, `parse_histology_filename`, `read_imagej_roi`, `write_imagej_roi`, `write_values_csv`, `imagej_pixel_size`, and `measure_line_profile`. The ECM analysis app in `histology_analysis` depends on that repository for `combine_values_csv`.
 
-**The ECM analysis app in [histology/ECM_Analysis/](histology/ECM_Analysis/) depends on that repository** for `combine_values_csv`, so add it to the MATLAB path alongside this one:
+Add both repositories to the MATLAB path if you need histology workflows:
 
 ```matlab
-addpath_nogit(pwd)
+addpath('c:/src/histology_analysis')
 addpath('c:/src/histology_browser')
 ```
-
-| File | Summary |
-| --- | --- |
-| [extract_czi_metadata.m](histology/extract_czi_metadata.m) | Recursively extracts checklist-aligned metadata from `.czi` files into a table, with optional parallel processing and Excel export. |
-| [extract_equal_area_profiles.m](histology/extract_equal_area_profiles.m) | Samples image intensity across trapezoidal regions laid out along a curve and returns profile metrics. |
-| [histologyLabeller.m](histology/histologyLabeller.m) | Interactive montage browser for labeling image crops or paired image sets. |
-| [InteractiveAffineOverlay.m](histology/InteractiveAffineOverlay.m) | Keyboard-driven affine overlay tool for aligning a foreground image onto a background image. |
-| [InteractiveRotator.m](histology/InteractiveRotator.m) | Interactive image rotation helper used by other histology workflows. |
-| [organize_images_by_section_gui.m](histology/organize_images_by_section_gui.m) | GUI for reorganizing images by tissue section. |
-| [parabola_offset.m](histology/parabola_offset.m) | Computes offset curves and arc lengths for parabolic profile construction. |
-| [parseBfTiff.m](histology/parseBfTiff.m) | Reads OME-TIFF data through Bio-Formats and returns image channels plus metadata. |
-| [straightenLine.m](histology/straightenLine.m) | Straightens image content sampled along a user-defined line. |
-| [straighten_cortex.m](histology/straighten_cortex.m) | End-to-end cortex straightening and profile extraction pipeline for histology OME-TIFF images. |
-| [straighten_cortex2.m](histology/straighten_cortex2.m) | Alternative cortex-straightening implementation. |
-| [ThresholdAdjuster.m](histology/ThresholdAdjuster.m) | Interactive threshold tuning tool with boundary overlays. |
-| [T_HistologyBrainSurface.m](histology/T_HistologyBrainSurface.m) | Test or exploratory script related to histology brain-surface workflows. |
-| [T_Overlay.m](histology/T_Overlay.m) | Test or exploratory script for image overlay workflows. |
-| [T_ShowSections.m](histology/T_ShowSections.m) | Test or exploratory script for viewing section data. |
 
 ## 3D Slicer Scripts
 
@@ -220,8 +201,7 @@ These scripts run inside Photoshop and automate multi-image stitching workflows.
 ## Dependencies and Environment Notes
 
 - MATLAB is the primary environment for the `.m` utilities.
-- Several histology functions depend on Bio-Formats and Image Processing Toolbox-style functionality.
-- [histology/ECM_Analysis/](histology/ECM_Analysis/) additionally requires the [histology_browser](https://github.com/dstolz/histology_browser) repository on the path.
+- Histology image-processing and analysis functions now live in [histology_analysis](https://github.com/dstolz/histology_analysis), which depends on Bio-Formats, Image Processing Toolbox-style functionality, and (for `ECM_Analysis/`) the [histology_browser](https://github.com/dstolz/histology_browser) repository on the path.
 - Fiji macros expect Fiji/ImageJ plugins such as Bio-Formats and, for segmentation, Labkit.
 - Slicer scripts must be executed inside 3D Slicer rather than a standard Python interpreter.
 - Photoshop scripts target Adobe Photoshop's ExtendScript environment.
@@ -232,5 +212,5 @@ If you are new to the repository, these are the fastest places to start:
 
 1. Run `addpath_nogit(pwd)` in MATLAB.
 2. Browse [compute/](compute/), [gui/](gui/), and [tools/](tools/) for general reusable helpers.
-3. Use [histology/](histology/) for image-analysis workflows tied to cortical surface extraction and alignment.
+3. For histology image-analysis workflows tied to cortical surface extraction and alignment, use [histology_analysis](https://github.com/dstolz/histology_analysis) instead.
 4. Use [slicer/](slicer/), [fiji_scripts/](fiji_scripts/), and [photoshop_scripts/](photoshop_scripts/) only from their host applications.
