@@ -155,13 +155,12 @@ Run the `.jsx` automation scripts from Photoshop's Scripts workflow.
 
 All histology functions now live in their own repository, [histology_analysis](https://github.com/dstolz/histology_analysis): the image-processing functions and interactive alignment/thresholding/labeling tools that used to sit under `histology/` here, plus the ECM staining analysis app (`ECM_Analysis/`).
 
-The section browser and the values-CSV ingest helpers were split out earlier into a separate repository, [histology_browser](https://github.com/dstolz/histology_browser): `HistologyImageBrowser`, `launch_histology_browser`, `combine_values_csv`, `build_histology_image_catalog`, `parse_histology_filename`, `read_imagej_roi`, `write_imagej_roi`, `write_values_csv`, `imagej_pixel_size`, and `measure_line_profile`. The ECM analysis app in `histology_analysis` depends on that repository for `combine_values_csv`.
+The section browser and the values-CSV ingest helpers, which were split out earlier into a separate `histology_browser` repository, now live there too, under [`histology_browser/`](https://github.com/dstolz/histology_analysis/tree/main/histology_browser): `HistologyImageBrowser`, `launch_histology_browser`, `combine_values_csv`, `build_histology_image_catalog`, `parse_histology_filename`, `read_imagej_roi`, `write_imagej_roi`, `write_values_csv`, `imagej_pixel_size`, and `measure_line_profile`.
 
-Add both repositories to the MATLAB path if you need histology workflows:
+Add the repository and its subfolders to the MATLAB path if you need histology workflows:
 
 ```matlab
-addpath('c:/src/histology_analysis')
-addpath('c:/src/histology_browser')
+addpath_nogit('c:/src/histology_analysis')
 ```
 
 ## 3D Slicer Scripts
@@ -201,7 +200,7 @@ These scripts run inside Photoshop and automate multi-image stitching workflows.
 ## Dependencies and Environment Notes
 
 - MATLAB is the primary environment for the `.m` utilities.
-- Histology image-processing and analysis functions now live in [histology_analysis](https://github.com/dstolz/histology_analysis), which depends on Bio-Formats, Image Processing Toolbox-style functionality, and (for `ECM_Analysis/`) the [histology_browser](https://github.com/dstolz/histology_browser) repository on the path.
+- Histology image-processing and analysis functions now live in [histology_analysis](https://github.com/dstolz/histology_analysis), which depends on Bio-Formats and Image Processing Toolbox-style functionality, and includes the histology section browser under `histology_browser/`.
 - Fiji macros expect Fiji/ImageJ plugins such as Bio-Formats and, for segmentation, Labkit.
 - Slicer scripts must be executed inside 3D Slicer rather than a standard Python interpreter.
 - Photoshop scripts target Adobe Photoshop's ExtendScript environment.
