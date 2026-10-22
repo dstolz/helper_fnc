@@ -6,7 +6,8 @@
 // - Prompts once at startup for the alignment mode to use for the full batch
 // - Defaults to translation-only alignment (Reposition)
 // - Skips folders with fewer than 2 eligible source images
-// - Skips folders that already have the exact stitched PSD output
+// - Skips folders that already have the exact stitched PSD (or PSB) output
+// - Saves the layered master as PSB when the result exceeds PSD's 30,000 px / 2 GB limits
 // - Writes a live log entry before each folder starts, so hangs are traceable
 // - Optionally purges Photoshop caches between folders to reduce long-run slowdowns
 // - Restores Photoshop dialog state when finished
@@ -30,6 +31,10 @@ var RUN_GARBAGE_COLLECTION = true;       // ExtendScript GC hint between folders
 // Optional guards. Set to 0 to disable.
 var MAX_IMAGES_PER_FOLDER = 0;           // Example: 20
 var MAX_TOTAL_INPUT_GB = 0;              // Example: 4.0
+
+// PSD cannot exceed 30,000 px on either side (or 2 GB on disk); larger
+// documents must be saved as PSB (Large Document Format).
+var PSD_MAX_DIMENSION_PX = 30000;
 
 var CURRENT_ALIGNMENT = null;
 
@@ -115,12 +120,14 @@ function getOutputFiles(folder) {
     var baseName = getOutputBaseName(folder);
     return {
         psd: new File(folder.fsName + "/" + baseName + ".psd"),
+        psb: new File(folder.fsName + "/" + baseName + ".psb"),
         png: new File(folder.fsName + "/" + baseName + ".png")
     };
 }
 
 function hasExistingStitchedOutput(folder) {
-    return getOutputFiles(folder).psd.exists;
+    var outputs = getOutputFiles(folder);
+    return outputs.psd.exists || outputs.psb.exists;
 }
 
 function getInProgressMarkerFile(folder) {
@@ -269,21 +276,104 @@ function applyAlignmentSettings() {
     photomerge.removeVignette = false;
 }
 
-function saveOutputs(folder) {
-    var outputs = getOutputFiles(folder);
+function describeDocument(doc) {
+    return "width=" + Math.round(doc.width.as("px")) + "px" +
+        " | height=" + Math.round(doc.height.as("px")) + "px" +
+        " | bits=" + String(doc.bitsPerChannel).replace("BitsPerChannelType.", "") +
+        " | mode=" + String(doc.mode).replace("DocumentMode.", "") +
+        " | topLevelLayers=" + doc.layers.length;
+}
 
+function exceedsPsdDimensions(doc) {
+    return doc.width.as("px") > PSD_MAX_DIMENSION_PX || doc.height.as("px") > PSD_MAX_DIMENSION_PX;
+}
+
+function savePsd(doc, file) {
     var psdSaveOptions = new PhotoshopSaveOptions();
     psdSaveOptions.layers = true;
     psdSaveOptions.embedColorProfile = true;
     psdSaveOptions.maximizeCompatibility = true;
 
-    // Save layered master first.
-    app.activeDocument.saveAs(outputs.psd, psdSaveOptions, true, Extension.LOWERCASE);
+    doc.saveAs(file, psdSaveOptions, true, Extension.LOWERCASE);
+}
+
+// The DOM has no PSB save options, so PSB goes through Action Manager.
+function savePsb(doc, file) {
+    app.activeDocument = doc;
+
+    var psbOptions = new ActionDescriptor();
+    psbOptions.putBoolean(stringIDToTypeID("maximizeCompatibility"), true);
+
+    var desc = new ActionDescriptor();
+    desc.putObject(charIDToTypeID("As  "), stringIDToTypeID("largeDocumentFormat"), psbOptions);
+    desc.putPath(charIDToTypeID("In  "), file);
+    desc.putBoolean(charIDToTypeID("Cpy "), true);
+    desc.putBoolean(charIDToTypeID("LwCs"), true);
+    desc.putBoolean(charIDToTypeID("EmbP"), true);
+
+    executeAction(charIDToTypeID("save"), desc, DialogModes.NO);
+}
+
+function fileSizeGB(file) {
+    var f = new File(file.fsName);
+    return f.exists ? formatGB(Number(f.length)) + " GB" : "file not found after save";
+}
+
+// Saves the layered master (PSD, or PSB when the document is too large for
+// PSD) and then the optional PNG copy. Each step is logged separately so a
+// failure names the format that failed. Returns the names of files written.
+function saveOutputs(folder) {
+    var outputs = getOutputFiles(folder);
+    var doc = app.activeDocument;
+    var saved = [];
+    var masterFile;
+
+    logMessage("DOCUMENT: " + folder.fullName + " | " + describeDocument(doc));
+
+    if (exceedsPsdDimensions(doc)) {
+        logMessage("SAVE PSB (exceeds " + PSD_MAX_DIMENSION_PX + " px PSD limit): " + outputs.psb.fsName);
+        try {
+            savePsb(doc, outputs.psb);
+        } catch (psbError) {
+            throw new Error("PSB save failed: " + psbError.message);
+        }
+        masterFile = outputs.psb;
+    } else {
+        logMessage("SAVE PSD: " + outputs.psd.fsName);
+        try {
+            savePsd(doc, outputs.psd);
+            masterFile = outputs.psd;
+        } catch (psdError) {
+            // Within the pixel limit, PSD can still fail on the 2 GB file-size limit.
+            logMessage("PSD save failed: " + psdError.message);
+            if (new File(outputs.psd.fsName).exists) {
+                logMessage("WARNING: a .psd file exists after the failed save and may be incomplete: " + outputs.psd.fsName);
+            }
+            logMessage("SAVE PSB (retry after PSD failure): " + outputs.psb.fsName);
+            try {
+                savePsb(doc, outputs.psb);
+            } catch (psbRetryError) {
+                throw new Error("PSD save failed (" + psdError.message + "); PSB retry also failed: " + psbRetryError.message);
+            }
+            masterFile = outputs.psb;
+        }
+    }
+
+    logMessage("SAVED: " + masterFile.fsName + " | size=" + fileSizeGB(masterFile));
+    saved.push(masterFile.name);
 
     if (SAVE_PNG_COPY) {
-        var pngSaveOptions = new PNGSaveOptions();
-        app.activeDocument.saveAs(outputs.png, pngSaveOptions, true, Extension.LOWERCASE);
+        logMessage("SAVE PNG: " + outputs.png.fsName);
+        try {
+            doc.saveAs(outputs.png, new PNGSaveOptions(), true, Extension.LOWERCASE);
+        } catch (pngError) {
+            throw new Error("PNG save failed (layered master was saved to " + masterFile.name + "): " + pngError.message);
+        }
+        logMessage("SAVED: " + outputs.png.fsName + " | size=" + fileSizeGB(outputs.png));
+        saved.push(outputs.png.name);
     }
+
+    return saved;
 }
 
 function closeDocumentsOpenedDuringOperation(startDocumentCount) {
@@ -368,7 +458,7 @@ function performPhotomerge(folder) {
 
     if (!OVERWRITE_EXISTING_OUTPUT && hasExistingStitchedOutput(folder)) {
         stats.skippedExisting++;
-        logMessage("SKIP (stitched PSD already exists): " + outputs.psd.fsName);
+        logMessage("SKIP (stitched PSD/PSB already exists): " + (outputs.psd.exists ? outputs.psd : outputs.psb).fsName);
         return;
     }
 
@@ -394,12 +484,12 @@ function performPhotomerge(folder) {
 
         logMessage("MERGE RETURNED: " + folder.fullName);
 
-        saveOutputs(folder);
+        var savedNames = saveOutputs(folder);
         app.activeDocument.close(SaveOptions.DONOTSAVECHANGES);
         removeInProgressMarker(folder);
 
         stats.stitched++;
-        logMessage("OK: " + folder.fullName + " -> " + outputs.psd.name + (SAVE_PNG_COPY ? ", " + outputs.png.name : ""));
+        logMessage("OK: " + folder.fullName + " -> " + savedNames.join(", "));
     } catch (e) {
         stats.errors++;
         logMessage("ERROR: " + folder.fullName + " | " + e.message);
